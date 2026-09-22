@@ -1,3 +1,3 @@
-/**
- * TODO: Provide an accessible not-found view with navigation back to Home.
- */
+export default function NotFoundPage() {
+  return <h1>404 - Page Not Found</h1>;
+}

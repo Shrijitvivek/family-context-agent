@@ -1,4 +1,3 @@
-/**
- * TODO: Show commitments chronologically and group them by month/date.
- * Provide useful filters without duplicating backend priority logic.
- */
+export default function TimelinePage() {
+  return <h1>Timeline</h1>;
+}
