@@ -1,4 +1,3 @@
-/**
- * TODO: Build the conversational workflow for text, PDF, and image input.
- * Support clarification, confirmation, tool-result feedback, and failures.
- */
+export default function ChatPage() {
+  return <h1>Chat</h1>;
+}

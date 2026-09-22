@@ -1,3 +1,3 @@
-/**
- * TODO: Show uploaded files, processing states, extracted data, and linked commitments.
- */
+export default function DocumentsPage() {
+  return <h1>Documents</h1>;
+}
