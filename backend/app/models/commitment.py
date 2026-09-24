@@ -17,7 +17,7 @@ from sqlalchemy import (
     Uuid,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, synonym
 
 from app.db.base import Base
 
@@ -33,6 +33,13 @@ class Commitment(Base):
     __tablename__ = "commitments"
     __table_args__ = (
         CheckConstraint("amount IS NULL OR amount > 0", name="ck_commitments_amount_positive"),
+        Index("ix_commitments_family_id", "family_id"),
+        Index("ix_commitments_member_id", "member_id"),
+        Index("ix_commitments_status", "status"),
+        Index("ix_commitments_due_date", "due_date"),
+        Index("ix_commitments_priority", "priority"),
+        Index("ix_commitments_category", "category"),
+        Index("ix_commitments_family_due_date", "family_id", "due_date"),
         Index("ix_commitments_family_status_due", "family_id", "status", "due_date"),
         Index("ix_commitments_family_category", "family_id", "category"),
         Index("ix_commitments_member_due", "member_id", "due_date"),
@@ -45,8 +52,10 @@ class Commitment(Base):
     member_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("family_members.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    commitment_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    commitment_type: Mapped[str | None] = mapped_column(
+        String(50), nullable=True, default="BILL", server_default="BILL", index=True
+    )
+    category: Mapped[str] = mapped_column(String(100), nullable=False, default="GENERAL")
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
@@ -56,9 +65,10 @@ class Commitment(Base):
         String(30), nullable=False, default="PENDING", server_default="PENDING"
     )
     priority: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="MEDIUM", server_default="MEDIUM"
+        String(30), nullable=False, default="MEDIUM", server_default="MEDIUM"
     )
-    source_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    source: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    source_type = synonym("source")
     document_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("documents.id", ondelete="SET NULL"), nullable=True, index=True
     )

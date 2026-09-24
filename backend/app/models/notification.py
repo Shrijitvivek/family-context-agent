@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, Uuid, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -17,6 +17,9 @@ if TYPE_CHECKING:
 class Notification(Base):
     __tablename__ = "notifications"
     __table_args__ = (
+        Index("ix_notifications_family_id", "family_id"),
+        Index("ix_notifications_commitment_id", "commitment_id"),
+        Index("ix_notifications_read", "family_id", "is_read"),
         Index(
             "ix_notifications_family_commitment_active",
             "family_id",
@@ -33,10 +36,11 @@ class Notification(Base):
         Uuid, ForeignKey("commitments.id", ondelete="CASCADE"), nullable=True, index=True
     )
     notification_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    priority: Mapped[str] = mapped_column(String(20), nullable=False)
-    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    priority: Mapped[str | None] = mapped_column(String(20), nullable=True, default="MEDIUM")
+    title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     message: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
+    is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    status: Mapped[str | None] = mapped_column(String(20), nullable=True, default="ACTIVE")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

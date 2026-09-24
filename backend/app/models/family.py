@@ -22,7 +22,7 @@ class Family(Base):
     __tablename__ = "families"
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
     timezone: Mapped[str] = mapped_column(String(50), nullable=False, default="Asia/Kolkata")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -31,9 +31,27 @@ class Family(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
-    members: Mapped[list["FamilyMember"]] = relationship(back_populates="family")
-    expenses: Mapped[list["Expense"]] = relationship(back_populates="family")
-    commitments: Mapped[list["Commitment"]] = relationship(back_populates="family")
-    documents: Mapped[list["Document"]] = relationship(back_populates="family")
-    dependencies: Mapped[list["CommitmentDependency"]] = relationship(back_populates="family")
-    notifications: Mapped[list["Notification"]] = relationship(back_populates="family")
+    members: Mapped[list["FamilyMember"]] = relationship(
+        back_populates="family",
+        cascade="all, delete-orphan",
+    )
+    expenses: Mapped[list["Expense"]] = relationship(
+        back_populates="family",
+        cascade="all, delete-orphan",
+    )
+    commitments: Mapped[list["Commitment"]] = relationship(
+        back_populates="family",
+        cascade="all, delete-orphan",
+    )
+    documents: Mapped[list["Document"]] = relationship(
+        back_populates="family",
+        cascade="all, delete-orphan",
+    )
+    dependencies: Mapped[list["CommitmentDependency"]] = relationship(
+        back_populates="family",
+        cascade="all, delete-orphan",
+    )
+    notifications: Mapped[list["Notification"]] = relationship(
+        back_populates="family",
+        cascade="all, delete-orphan",
+    )
