@@ -27,3 +27,5 @@ frontend/.vite/
 *.log
 *.sqlite3
 *.db
+family_agent/
+family/
