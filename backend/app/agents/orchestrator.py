@@ -22,6 +22,7 @@ AI
 Final response
 """
 
+import json
 from typing import Any
 
 from app.agents.prompts import (
@@ -42,7 +43,6 @@ class FamilyContextAgent:
     ) -> None:
 
         self.ai_client = ai_client
-
         self.tool_registry = tool_registry
 
     async def run(
@@ -112,10 +112,8 @@ class FamilyContextAgent:
                         "type": "function",
                         "function": {
                             "name": tool_call.name,
-                            "arguments": (
-                                __import__("json").dumps(
-                                    tool_call.arguments
-                                )
+                            "arguments": json.dumps(
+                                tool_call.arguments
                             ),
                         },
                     }
@@ -176,15 +174,14 @@ class FamilyContextAgent:
                         "tool_call_id": (
                             tool_call.call_id
                         ),
-                        "content": (
-                            __import__("json").dumps(
-                                result,
-                                default=str,
-                            )
+                        "content": json.dumps(
+                            result,
+                            default=str,
                         ),
                     }
                 )
 
+        # Maximum tool rounds reached.
         state.assistant_message = (
             "I couldn't complete the request safely. "
             "Please try again."
