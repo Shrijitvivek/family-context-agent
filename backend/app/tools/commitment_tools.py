@@ -3,13 +3,9 @@
 from app.core.constants import CommitmentStatus
 from app.schemas.commitment import (
     CommitmentCreate,
-    CommitmentDependencyCreate,
     CommitmentRead,
     CommitmentUpdate,
     CreateCommitmentToolResult,
-    CreateDependencyToolResult,
-    GetFamilyPrioritiesQuery,
-    GetFamilyPrioritiesToolResult,
     SearchCommitmentsQuery,
     SearchCommitmentsToolResult,
     UpdateCommitmentToolResult,
@@ -53,23 +49,5 @@ async def update_commitment(
     return UpdateCommitmentToolResult(
         commitment_id=commitment.id,
         status=CommitmentStatus(commitment.status),
-    )
-
-
-async def create_dependency(
-    service: CommitmentService, payload: CommitmentDependencyCreate
-) -> CreateDependencyToolResult:
-    """Create a dependency relationship between commitments."""
-    await service.create_dependency(payload)
-    return CreateDependencyToolResult()
-
-
-async def get_family_priorities(
-    service: CommitmentService, query: GetFamilyPrioritiesQuery
-) -> GetFamilyPrioritiesToolResult:
-    """Get upcoming and priority commitments for a family."""
-    results = await service.get_family_priorities(query)
-    return GetFamilyPrioritiesToolResult(
-        commitments=[CommitmentRead.model_validate(c) for c in results]
     )
 

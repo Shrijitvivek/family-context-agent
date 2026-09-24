@@ -240,3 +240,31 @@ async def test_registry_rejects_incomplete_or_unknown_tool_calls() -> None:
         await registry.dispatch("add_expense", {"category": "GROCERIES"})
     with pytest.raises(ToolInputValidationError):
         await registry.dispatch("drop_database", {})
+
+
+@pytest.mark.asyncio
+async def test_direct_dependency_and_priority_tool_functions() -> None:
+    from app.schemas.commitment import CommitmentDependencyCreate, GetFamilyPrioritiesQuery
+    from app.tools.dependency_tools import create_dependency
+    from app.tools.priority_tools import get_family_priorities
+
+    family_id = uuid4()
+    commitment_repository = FakeCommitmentRepository()
+    commitment_service = CommitmentService(commitment_repository)  # type: ignore[arg-type]
+
+    dep_res = await create_dependency(
+        commitment_service,
+        CommitmentDependencyCreate(
+            family_id=family_id,
+            source_commitment_id=uuid4(),
+            target_commitment_id=uuid4(),
+            relationship_type="MUST_COMPLETE_BEFORE",
+        ),
+    )
+    assert dep_res.success is True
+
+    priority_res = await get_family_priorities(
+        commitment_service,
+        GetFamilyPrioritiesQuery(family_id=family_id),
+    )
+    assert priority_res.success is True

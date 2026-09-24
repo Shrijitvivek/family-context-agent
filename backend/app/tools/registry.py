@@ -33,12 +33,12 @@ from app.services.commitment import CommitmentService
 from app.services.expense import ExpenseService
 from app.tools.commitment_tools import (
     create_commitment,
-    create_dependency,
-    get_family_priorities,
     search_commitments,
     update_commitment,
 )
+from app.tools.dependency_tools import create_dependency
 from app.tools.expense_tools import add_expense, get_expense_summary
+from app.tools.priority_tools import get_family_priorities
 
 ToolResult = (
     AddExpenseToolResult
