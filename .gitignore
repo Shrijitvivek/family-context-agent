@@ -30,3 +30,5 @@ family/
 *.log
 *.sqlite3
 *.db
+family_agent/
+family/

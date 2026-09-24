@@ -4,12 +4,13 @@ Chat API endpoint.
 
 from fastapi import APIRouter, Depends
 
-from app.agents.orchestrator import FamilyContextAgent
 from app.api.dependencies import (
+    get_agent_event_repository,
     get_ai_client,
     get_tool_registry,
 )
 from app.clients.ai_model import AIModelClient
+from app.repositories.agent_event import AgentEventRepository
 from app.schemas.agent import (
     ChatRequest,
     ChatResponse,
@@ -32,14 +33,15 @@ def get_chat_service(
     tool_registry: ToolRegistry = Depends(
         get_tool_registry
     ),
+    agent_event_repository: AgentEventRepository = Depends(
+        get_agent_event_repository
+    ),
 ) -> ChatService:
 
     return ChatService(
-        ai_client=ai_client,
-        tool_registry=tool_registry,
-    )
-
-
+    ai_client=ai_client,
+    tool_registry=tool_registry,
+)
 @router.post(
     "",
     response_model=ChatResponse,
