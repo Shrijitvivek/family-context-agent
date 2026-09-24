@@ -1,8 +1,5 @@
-"""
-Async SQLAlchemy database session.
-"""
-
 import os
+from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -12,21 +9,15 @@ from sqlalchemy.ext.asyncio import (
 
 
 DATABASE_URL = os.getenv(
-    "DATABASE_URL"
+    "DATABASE_URL",
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/family_context",
 )
-
-if not DATABASE_URL:
-    raise RuntimeError(
-        "DATABASE_URL is not configured."
-    )
-
 
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
     pool_pre_ping=True,
 )
-
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
@@ -35,18 +26,11 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 
-async def get_db():
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """Provide a database session for FastAPI requests."""
     async with AsyncSessionLocal() as session:
-
         try:
             yield session
-
         except Exception:
-
             await session.rollback()
-
             raise
-
-        finally:
-
-            await session.close()

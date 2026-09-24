@@ -1,81 +1,53 @@
-"""
-Observable agent event model.
-
-Do not store hidden chain-of-thought.
-Store only useful operational information.
-"""
-
+import uuid
 from datetime import datetime
-from typing import Any
-from uuid import UUID, uuid4
 
-from sqlalchemy import (
-    DateTime,
-    ForeignKey,
-    JSON,
-    String,
-    Uuid,
-    func,
-)
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import DateTime, ForeignKey, Index, JSON, String, Text, func
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
 
 class AgentEvent(Base):
-
     __tablename__ = "agent_events"
 
-    id: Mapped[UUID] = mapped_column(
-        Uuid,
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         primary_key=True,
-        default=uuid4,
+        default=uuid.uuid4,
     )
 
-    family_id: Mapped[UUID] = mapped_column(
-        Uuid,
-        ForeignKey(
-            "families.id",
-            ondelete="CASCADE",
-        ),
+    family_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("families.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
-    )
-
-    conversation_id: Mapped[UUID | None] = mapped_column(
-        Uuid,
-        nullable=True,
-        index=True,
     )
 
     event_type: Mapped[str] = mapped_column(
-        String(80),
-        nullable=False,
-        index=True,
-    )
-
-    tool_name: Mapped[str | None] = mapped_column(
         String(100),
-        nullable=True,
-    )
-
-    success: Mapped[bool] = mapped_column(
-        default=True,
         nullable=False,
     )
 
-    latency_ms: Mapped[int | None] = mapped_column(
+    description: Mapped[str | None] = mapped_column(
+        Text,
         nullable=True,
     )
 
-    details: Mapped[dict[str, Any]] = mapped_column(
+    event_data: Mapped[dict | None] = mapped_column(
         JSON,
-        default=dict,
-        nullable=False,
+        nullable=True,
     )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        nullable=False,
         server_default=func.now(),
+        nullable=False,
+    )
+
+    family = relationship("Family")
+
+    __table_args__ = (
+        Index("ix_agent_events_family_id", "family_id"),
+        Index("ix_agent_events_event_type", "event_type"),
+        Index("ix_agent_events_created_at", "created_at"),
     )

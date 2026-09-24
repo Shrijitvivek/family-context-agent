@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Uuid, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, synonym
 
 from app.db.base import Base
 
@@ -17,14 +17,20 @@ if TYPE_CHECKING:
 
 class FamilyMember(Base):
     __tablename__ = "family_members"
-    __table_args__ = (Index("ix_family_members_family_name", "family_id", "name"),)
+    __table_args__ = (
+        Index("ix_family_members_family_id", "family_id"),
+        Index("ix_family_members_name", "name"),
+        Index("ix_family_members_active", "family_id", "is_active"),
+        Index("ix_family_members_family_name", "family_id", "name"),
+    )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     family_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("families.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
-    relationship_name: Mapped[str | None] = mapped_column("relationship", String(50), nullable=True)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    relationship_type: Mapped[str] = mapped_column(String(50), nullable=False, default="OTHER")
+    relationship_name = synonym("relationship_type")
     display_role: Mapped[str | None] = mapped_column(String(100), nullable=True)
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
