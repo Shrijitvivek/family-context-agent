@@ -1,7 +1,8 @@
-"""Focused tests for add_expense, get_expense_summary, and create_commitment."""
+"""Focused tests for all registered tools in the ToolRegistry."""
 
 from datetime import date
 from decimal import Decimal
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -16,9 +17,9 @@ from app.tools.registry import ToolRegistry
 
 class FakeExpenseRepository:
     def __init__(self) -> None:
-        self.added = []
+        self.added: list[Any] = []
         self.commits = 0
-        self.scope_checks = []
+        self.scope_checks: list[Any] = []
 
     async def assert_scope(self, family_id: UUID, member_id: UUID | None = None) -> None:
         self.scope_checks.append((family_id, member_id))
@@ -47,9 +48,9 @@ class FakeExpenseRepository:
 class FakeCommitmentRepository:
     def __init__(self, candidates: list[Commitment] | None = None) -> None:
         self.candidates = candidates or []
-        self.added = []
+        self.added: list[Commitment] = []
         self.commits = 0
-        self.scope_checks = []
+        self.scope_checks: list[Any] = []
 
     async def assert_scope(self, family_id: UUID, *, member_id=None, document_id=None) -> None:
         self.scope_checks.append((family_id, member_id, document_id))

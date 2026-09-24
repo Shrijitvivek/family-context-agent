@@ -1,5 +1,6 @@
 """Controlled commitment tools exposed to the Family Context Agent."""
 
+from app.core.constants import CommitmentStatus
 from app.schemas.commitment import (
     CommitmentCreate,
     CommitmentDependencyCreate,
@@ -29,7 +30,7 @@ async def create_commitment(
     commitment = await service.create(payload)
     return CreateCommitmentToolResult(
         commitment_id=commitment.id,
-        status=commitment.status,
+        status=CommitmentStatus(commitment.status),
     )
 
 
@@ -51,7 +52,7 @@ async def update_commitment(
     commitment = await service.update(payload)
     return UpdateCommitmentToolResult(
         commitment_id=commitment.id,
-        status=commitment.status,
+        status=CommitmentStatus(commitment.status),
     )
 
 
