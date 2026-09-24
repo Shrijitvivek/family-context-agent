@@ -73,8 +73,7 @@ class RegisteredTool:
 
 
 class ToolRegistry:
-    """Binds request-scoped services to the three currently available tools."""
-
+    """Binds request-scoped services to the seven Family Context tools."""
     def __init__(
         self,
         expense_service: ExpenseService,
