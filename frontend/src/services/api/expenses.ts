@@ -1,6 +1,7 @@
 import { apiClient } from "./client";
 
 export interface Expense {
+  merchant: string;
   id: string;
   description: string;
   amount: number;
