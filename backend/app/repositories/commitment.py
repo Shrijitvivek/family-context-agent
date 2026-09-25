@@ -2,7 +2,7 @@
 
 from datetime import date
 from uuid import UUID
-
+from sqlalchemy import case
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -143,7 +143,7 @@ class CommitmentRepository:
             family_id=payload.family_id,
             source_commitment_id=payload.source_commitment_id,
             target_commitment_id=payload.target_commitment_id,
-            relationship_type=payload.relationship_type
+            dependency_type=payload.relationship_type,
         )
         self._session.add(dependency)
         await self._session.flush()
@@ -156,7 +156,7 @@ class CommitmentRepository:
         ]
         
         # We define a case statement to order by priority (CRITICAL -> HIGH -> MEDIUM -> LOW)
-        priority_order = func.case(
+        priority_order = case(
             (Commitment.priority == "CRITICAL", 1),
             (Commitment.priority == "HIGH", 2),
             (Commitment.priority == "MEDIUM", 3),

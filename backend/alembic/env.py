@@ -13,6 +13,7 @@ BACKEND_DIR = os.path.abspath(
 sys.path.insert(0, BACKEND_DIR)
 
 import app.models  # noqa: F401
+from app.core.config import get_settings
 from app.db.base import Base
 
 
@@ -25,10 +26,7 @@ target_metadata = Base.metadata
 
 
 def get_database_url() -> str:
-    return os.getenv(
-        "DATABASE_URL",
-        config.get_main_option("sqlalchemy.url"),
-    )
+    return get_settings().database_url
 
 
 def run_migrations_offline() -> None:
