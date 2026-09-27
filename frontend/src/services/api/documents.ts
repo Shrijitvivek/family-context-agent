@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { apiClient } from "./client";
 
 export interface DocumentResponse {
   document_id: string;
@@ -7,6 +7,6 @@ export interface DocumentResponse {
 }
 
 export const getDocuments = async (): Promise<DocumentResponse[]> => {
-  const response = await apiRequest<{ documents?: DocumentResponse[] } | DocumentResponse[]>("/api/v1/documents");
-  return Array.isArray(response) ? response : response.documents ?? [];
+  const response = await apiClient.get("/documents");
+  return response.data.documents ?? response.data;
 };

@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { apiClient } from "./client";
 
 export interface Priority {
   title: string;
@@ -15,11 +15,11 @@ export interface Commitment {
 }
 
 export const getPriorities = async (): Promise<Priority[]> => {
-  const response = await apiRequest<{ priorities?: Priority[] } | Priority[]>("/api/v1/priorities");
-  return Array.isArray(response) ? response : response.priorities ?? [];
+  const response = await apiClient.get("/priorities");
+  return response.data.priorities ?? response.data;
 };
 
 export const getUpcomingCommitments = async (): Promise<Commitment[]> => {
-  const response = await apiRequest<{ commitments?: Commitment[] } | Commitment[]>("/api/v1/commitments");
-  return Array.isArray(response) ? response : response.commitments ?? [];
+  const response = await apiClient.get("/commitments");
+  return response.data.commitments ?? response.data;
 };

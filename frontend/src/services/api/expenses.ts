@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { apiClient } from "./client";
 
 export interface Expense {
   merchant: string;
@@ -25,17 +25,16 @@ export interface ExpenseSummary {
 }
 
 export async function getExpenses(): Promise<Expense[]> {
-  return apiRequest<Expense[]>("/api/v1/expenses");
+  const response = await apiClient.get<Expense[]>("/expenses");
+  return response.data;
 }
 
 export async function addExpense(input: ExpenseCreateInput): Promise<Expense> {
-  return apiRequest<Expense>("/api/v1/expenses", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
+  const response = await apiClient.post<Expense>("/expenses", input);
+  return response.data;
 }
 
 export async function getExpenseSummary(): Promise<ExpenseSummary> {
-  return apiRequest<ExpenseSummary>("/api/v1/expenses/summary");
+  const response = await apiClient.get<ExpenseSummary>("/expenses/summary");
+  return response.data;
 }

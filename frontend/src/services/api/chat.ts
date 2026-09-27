@@ -1,5 +1,5 @@
 
-import { apiRequest } from "./client";
+import { apiClient } from "./client";
 
 // Message sent by the user
 export interface ChatRequest {
@@ -17,9 +17,10 @@ export interface ChatResponse {
 export const sendMessage = async (
   data: ChatRequest
 ): Promise<ChatResponse> => {
-  return apiRequest<ChatResponse>("/api/v1/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
+  const response = await apiClient.post<ChatResponse>(
+    "/chat",
+    data
+  );
+
+  return response.data;
 };

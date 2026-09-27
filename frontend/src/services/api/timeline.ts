@@ -1,6 +1,7 @@
 import type { TimelineResponse } from "../../types/api";
-import { apiRequest } from "./client";
+import { apiClient } from "./client";
 
 export async function getTimeline(): Promise<TimelineResponse> {
-  return apiRequest<TimelineResponse>("/api/v1/timeline");
+  const response = await apiClient.get<TimelineResponse>("/timeline");
+  return response.data;
 }
