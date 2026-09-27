@@ -39,9 +39,12 @@ def get_chat_service(
 ) -> ChatService:
 
     return ChatService(
-    ai_client=ai_client,
-    tool_registry=tool_registry,
-)
+        ai_client=ai_client,
+        tool_registry=tool_registry,
+        agent_event_repository=agent_event_repository,
+    )
+
+
 @router.post(
     "",
     response_model=ChatResponse,
@@ -62,9 +65,7 @@ async def chat(
 
     return ChatResponse(
         message=state.assistant_message,
-
         conversation_id=state.conversation_id,
-
         tool_calls=[
             ToolCall(
                 name=tool["name"],
@@ -72,11 +73,9 @@ async def chat(
             )
             for tool in state.tool_calls
         ],
-
         requires_clarification=(
             state.requires_clarification
         ),
-
         metadata={
             **state.metadata,
             "tool_results": state.tool_results,
