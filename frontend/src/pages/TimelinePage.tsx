@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { CalendarDays, UserRound } from "lucide-react";
 import type { Commitment, CommitmentStatus } from "../types/domain";
-import { getTimeline } from "../services/api/timeline";
 
 const filters: Array<"all" | CommitmentStatus> = ["all", "pending", "completed", "overdue"];
 
@@ -19,22 +18,60 @@ const priorityStyles: Record<Commitment["priority"], string> = {
   urgent: "bg-rose-50 text-rose-800",
 };
 
-export default function TimelinePage() {
-  const [items, setItems] = useState<Commitment[]>([]);
-  const [filter, setFilter] = useState<(typeof filters)[number]>("all");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+const sampleItems: Commitment[] = [
+  {
+    id: "commitment-doctor-visit",
+    title: "Doctor appointment",
+    familyMember: "Dad",
+    dueDate: "2026-09-28T09:00:00",
+    status: "pending",
+    priority: "high",
+    description: "Annual checkup at the family clinic.",
+  },
+  {
+    id: "commitment-school-fee",
+    title: "School fee payment",
+    familyMember: "Aarav",
+    dueDate: "2026-09-30T12:00:00",
+    status: "pending",
+    priority: "urgent",
+    description: "Submit the term fee before the deadline.",
+  },
+  {
+    id: "commitment-lab-test",
+    title: "CBC test",
+    familyMember: "Mom",
+    dueDate: "2026-10-02T08:30:00",
+    status: "pending",
+    priority: "medium",
+    description: "Bring the lab referral form.",
+  },
+  {
+    id: "commitment-insurance",
+    title: "Renew health insurance",
+    familyMember: "Family",
+    dueDate: "2026-09-20T17:00:00",
+    status: "overdue",
+    priority: "high",
+    description: "Review and renew the family policy.",
+  },
+  {
+    id: "commitment-groceries",
+    title: "Weekly grocery shopping",
+    familyMember: "Mom",
+    dueDate: "2026-09-25T18:00:00",
+    status: "completed",
+    priority: "low",
+    description: "Household groceries for the week.",
+  },
+];
 
-  useEffect(() => {
-    getTimeline()
-      .then((response) => setItems(response.items))
-      .catch((reason: Error) => setError(reason.message))
-      .finally(() => setLoading(false));
-  }, []);
+export default function TimelinePage() {
+  const [filter, setFilter] = useState<(typeof filters)[number]>("all");
 
   const visibleItems = useMemo(
-    () => (filter === "all" ? items : items.filter((item) => item.status === filter)),
-    [filter, items],
+    () => (filter === "all" ? sampleItems : sampleItems.filter((item) => item.status === filter)),
+    [filter],
   );
 
   return (
@@ -52,7 +89,7 @@ export default function TimelinePage() {
         <p className="text-sm font-medium text-slate-700">Filter by status</p>
         <div className="inline-flex w-fit max-w-full flex-wrap gap-1 rounded-md border border-slate-200 bg-white p-1" role="group" aria-label="Filter commitments by status">
           {filters.map((option) => {
-            const count = option === "all" ? items.length : items.filter((item) => item.status === option).length;
+            const count = option === "all" ? sampleItems.length : sampleItems.filter((item) => item.status === option).length;
             const selected = filter === option;
 
             return (
@@ -70,11 +107,7 @@ export default function TimelinePage() {
         </div>
       </div>
 
-      {error ? (
-        <p className="mt-6 rounded-md border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800">Unable to load commitments: {error}</p>
-      ) : loading ? (
-        <p className="mt-6 px-1 py-4 text-sm text-slate-600">Loading commitments...</p>
-      ) : visibleItems.length === 0 ? (
+      {visibleItems.length === 0 ? (
         <p className="mt-6 rounded-md border border-dashed border-slate-300 px-5 py-10 text-center text-sm text-slate-600">No commitments match this filter.</p>
       ) : (
         <section aria-label="Commitments" className="mt-5 divide-y divide-slate-200 border-y border-slate-200">
