@@ -1,22 +1,33 @@
-"""Business operation backing the create-commitment agent tool."""
+"""Business operations backing the commitment agent tools and API."""
+
+from uuid import UUID
 
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.exceptions import DuplicateCommitmentError, PersistenceError
 from app.models.commitment import Commitment
+from app.models.commitment_dependency import CommitmentDependency
 from app.repositories.commitment import CommitmentRepository
 from app.schemas.commitment import (
     CommitmentCreate,
     CommitmentDependencyCreate,
     CommitmentUpdate,
-    GetFamilyPrioritiesQuery,
     SearchCommitmentsQuery,
 )
+from app.services.dependency import DependencyService
+from app.services.priority import PriorityRefresher
 
 
 class CommitmentService:
-    def __init__(self, repository: CommitmentRepository) -> None:
+    def __init__(
+        self, repository: CommitmentRepository, on_change: PriorityRefresher | None = None
+    ) -> None:
         self._repository = repository
+        self._on_change = on_change
+
+    async def _changed(self, family_id: UUID) -> None:
+        if self._on_change is not None:
+            await self._on_change(family_id)
 
     async def create(self, payload: CommitmentCreate) -> Commitment:
         """Create a new commitment unless it duplicates an active family record."""
@@ -68,6 +79,7 @@ class CommitmentService:
         except SQLAlchemyError as exc:
             await self._repository.rollback()
             raise PersistenceError("create the commitment") from exc
+        await self._changed(commitment.family_id)
         return commitment
 
     async def search(self, query: SearchCommitmentsQuery) -> list[Commitment]:
@@ -79,20 +91,18 @@ class CommitmentService:
         try:
             commitment = await self._repository.update(payload)
             await self._repository.commit()
-            return commitment
         except SQLAlchemyError as exc:
             await self._repository.rollback()
             raise PersistenceError("update the commitment") from exc
+        await self._changed(payload.family_id)
+        return commitment
 
-    async def create_dependency(self, payload: CommitmentDependencyCreate):
-        try:
-            dependency = await self._repository.add_dependency(payload)
-            await self._repository.commit()
-            return dependency
-        except SQLAlchemyError as exc:
-            await self._repository.rollback()
-            raise PersistenceError("create the dependency") from exc
+    async def get(self, family_id: UUID, commitment_id: UUID) -> Commitment:
+        return await self._repository.get(family_id, commitment_id)
 
-    async def get_family_priorities(self, query: GetFamilyPrioritiesQuery) -> list[Commitment]:
-        await self._repository.assert_scope(query.family_id)
-        return await self._repository.get_priorities(query)
+    async def create_dependency(
+        self, payload: CommitmentDependencyCreate
+    ) -> CommitmentDependency:
+        """Create a dependency after duplicate and cycle checks."""
+        return await DependencyService(self._repository, self._on_change).create(payload)
+

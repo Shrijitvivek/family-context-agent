@@ -1,11 +1,7 @@
 """Typed application configuration.
 
 Values are read from real environment variables first, then from the root .env
-file. Only database settings are defined so far.
-
-TODO:
-- Validate Nebius, upload, CORS, logging, and scheduler settings.
-- Never hard-code or log secrets.
+file. Secrets such as the Nebius API key must never be hard-coded or logged.
 """
 
 from functools import lru_cache
@@ -25,6 +21,39 @@ class Settings(BaseSettings):
     )
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/family_context"
+
+    cors_origins: str = "http://localhost:5173"
+    family_timezone: str = "Asia/Kolkata"
+    demo_family_name: str = "Nair Family"
+
+    nebius_api_key: str = ""
+    nebius_base_url: str = "https://api.studio.nebius.ai/v1/"
+    nvidia_model_name: str = ""
+    model_timeout_seconds: float = 60.0
+
+    upload_dir: str = "storage/uploads"
+    max_upload_size_mb: int = 10
+    allowed_upload_types: str = "application/pdf,image/jpeg,image/png"
+
+    scheduler_enabled: bool = True
+    deadline_check_interval_minutes: int = 15
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def allowed_upload_type_set(self) -> frozenset[str]:
+        return frozenset(t.strip() for t in self.allowed_upload_types.split(",") if t.strip())
+
+    @property
+    def demo_scenario_dir(self) -> Path:
+        return ROOT_DIR / "synthetic_data" / "scenarios"
+
+    @property
+    def upload_path(self) -> Path:
+        path = Path(self.upload_dir)
+        return path if path.is_absolute() else ROOT_DIR / path
 
 
 @lru_cache
