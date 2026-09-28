@@ -9,10 +9,20 @@ import pytest
 from app.core.constants import CommitmentStatus
 from app.core.exceptions import DuplicateCommitmentError, ToolInputValidationError
 from app.models.commitment import Commitment
+from app.schemas.commitment import CommitmentCreate
 from app.schemas.expense import ExpenseSummary
 from app.services.commitment import CommitmentService
 from app.services.expense import ExpenseService
 from app.tools.registry import ToolRegistry
+
+
+class FakePriorityService:
+    def __init__(self) -> None:
+        self.requested: list[UUID] = []
+
+    async def attention_items(self, family_id: UUID) -> list[Any]:
+        self.requested.append(family_id)
+        return []
 
 
 class FakeExpenseRepository:
@@ -69,13 +79,15 @@ class FakeCommitmentRepository:
             commitment.status = payload.status.value
         return commitment
 
+    async def dependency_exists(self, source_id, target_id, relationship_type) -> bool:
+        return False
+
+    async def list_dependency_edges(self, family_id) -> list[tuple[UUID, UUID]]:
+        return []
+
     async def add_dependency(self, payload):
         self.scope_checks.append((payload.family_id, None, None))
         return type("CommitmentDependency", (), {"id": uuid4()})()
-
-    async def get_priorities(self, query) -> list[Commitment]:
-        self.scope_checks.append((query.family_id, None, None))
-        return self.candidates
 
     async def add(self, commitment: Commitment) -> Commitment:
         commitment.id = uuid4()
@@ -97,6 +109,7 @@ async def test_registry_executes_the_first_three_tools() -> None:
     registry = ToolRegistry(
         ExpenseService(expense_repository),  # type: ignore[arg-type]
         CommitmentService(commitment_repository),  # type: ignore[arg-type]
+        FakePriorityService(),  # type: ignore[arg-type]
     )
 
     expense_result = await registry.dispatch(
@@ -212,6 +225,7 @@ async def test_create_commitment_returns_duplicate_candidates_for_clarification(
     registry = ToolRegistry(
         ExpenseService(FakeExpenseRepository()),  # type: ignore[arg-type]
         CommitmentService(FakeCommitmentRepository([existing])),  # type: ignore[arg-type]
+        FakePriorityService(),  # type: ignore[arg-type]
     )
 
     with pytest.raises(DuplicateCommitmentError) as error:
@@ -234,6 +248,7 @@ async def test_registry_rejects_incomplete_or_unknown_tool_calls() -> None:
     registry = ToolRegistry(
         ExpenseService(FakeExpenseRepository()),  # type: ignore[arg-type]
         CommitmentService(FakeCommitmentRepository()),  # type: ignore[arg-type]
+        FakePriorityService(),  # type: ignore[arg-type]
     )
 
     with pytest.raises(ToolInputValidationError):
@@ -263,8 +278,41 @@ async def test_direct_dependency_and_priority_tool_functions() -> None:
     )
     assert dep_res.success is True
 
+    priority_service = FakePriorityService()
     priority_res = await get_family_priorities(
-        commitment_service,
+        priority_service,  # type: ignore[arg-type]
         GetFamilyPrioritiesQuery(family_id=family_id),
     )
     assert priority_res.success is True
+    assert priority_res.items == []
+    assert priority_service.requested == [family_id]
+
+
+@pytest.mark.asyncio
+async def test_priority_refresh_runs_only_after_successful_changes() -> None:
+    from app.schemas.commitment import CommitmentUpdate
+
+    refreshed: list[UUID] = []
+
+    async def refresh(family_id: UUID) -> None:
+        refreshed.append(family_id)
+
+    family_id = uuid4()
+    repository = FakeCommitmentRepository()
+    service = CommitmentService(repository, refresh)  # type: ignore[arg-type]
+    created = await service.create(
+        CommitmentCreate(family_id=family_id, commitment_type="BILL", title="Water Bill")
+    )
+    await service.update(
+        CommitmentUpdate(commitment_id=created.id, family_id=family_id, status="COMPLETED")
+    )
+    assert refreshed == [family_id, family_id]
+
+    duplicate = CommitmentService(
+        FakeCommitmentRepository([created]), refresh  # type: ignore[arg-type]
+    )
+    with pytest.raises(DuplicateCommitmentError):
+        await duplicate.create(
+            CommitmentCreate(family_id=family_id, commitment_type="BILL", title="Water Bill")
+        )
+    assert refreshed == [family_id, family_id]  # rejected change: no refresh
