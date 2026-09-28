@@ -1,4 +1,3 @@
-import os
 from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
@@ -7,11 +6,9 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from app.core.config import get_settings
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+asyncpg://postgres:postgres@localhost:5432/family_context",
-)
+DATABASE_URL = get_settings().database_url
 
 engine = create_async_engine(
     DATABASE_URL,

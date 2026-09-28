@@ -1,124 +1,41 @@
-# """Expense business service.
+"""Business operations backing the expense agent tools."""
 
-# TODO:
-# - Validate and record expenses.
-# - Query database-backed summaries for categories and date ranges.
-# - Trigger any relevant dashboard refresh/event recording.
-# """
+from sqlalchemy.exc import SQLAlchemyError
 
-
-from datetime import date
-from decimal import Decimal
-from uuid import UUID
-
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.repositories.expense_repository import ExpenseRepository
+from app.core.exceptions import PersistenceError
+from app.models.expense import Expense
+from app.repositories.expense import ExpenseRepository
+from app.schemas.expense import ExpenseCreate, ExpenseSummary, ExpenseSummaryQuery
 
 
 class ExpenseService:
-    """Business logic for expenses."""
+    def __init__(self, repository: ExpenseRepository) -> None:
+        self._repository = repository
 
-    def __init__(self, session: AsyncSession):
-        self.repository = ExpenseRepository(session)
-        self.session = session
+    async def record_expense(self, payload: ExpenseCreate) -> Expense:
+        """Persist one validated expense after checking family/member ownership."""
 
-    async def create_expense(
-        self,
-        family_id: UUID,
-        amount: Decimal,
-        category: str,
-        expense_date: date,
-        member_id: UUID | None = None,
-        merchant: str | None = None,
-        description: str | None = None,
-        source: str | None = None,
-    ):
-
-        if amount <= 0:
-            raise ValueError("Expense amount must be greater than zero.")
-
-        if not category.strip():
-            raise ValueError("Expense category is required.")
-
-        expense = await self.repository.create(
-            family_id=family_id,
-            amount=amount,
-            category=category,
-            expense_date=expense_date,
-            member_id=member_id,
-            merchant=merchant,
-            description=description,
-            source=source,
+        await self._repository.assert_scope(payload.family_id, payload.member_id)
+        expense = Expense(
+            family_id=payload.family_id,
+            member_id=payload.member_id,
+            amount=payload.amount,
+            category=payload.category,
+            merchant=payload.merchant,
+            description=payload.description,
+            expense_date=payload.expense_date,
+            source_type=payload.source_type.value,
         )
-
-        await self.session.commit()
-
+        try:
+            expense = await self._repository.add(expense)
+            await self._repository.commit()
+        except SQLAlchemyError as exc:
+            await self._repository.rollback()
+            raise PersistenceError("record the expense") from exc
         return expense
 
-    async def get_expense(
-        self,
-        expense_id: UUID,
-    ):
+    async def get_summary(self, query: ExpenseSummaryQuery) -> ExpenseSummary:
+        """Return a database aggregate, never a calculation from model context."""
 
-        return await self.repository.get_by_id(expense_id)
-
-    async def get_family_expenses(
-        self,
-        family_id: UUID,
-    ):
-
-        return await self.repository.get_by_family(family_id)
-
-    async def get_member_expenses(
-        self,
-        member_id: UUID,
-    ):
-
-        return await self.repository.get_by_member(member_id)
-
-    async def update_expense(
-        self,
-        expense_id: UUID,
-        **values,
-    ):
-
-        expense = await self.repository.update(
-            expense_id,
-            **values,
-        )
-
-        if expense is None:
-            raise ValueError("Expense not found.")
-
-        await self.session.commit()
-
-        return expense
-
-    async def delete_expense(
-        self,
-        expense_id: UUID,
-    ):
-
-        deleted = await self.repository.delete(expense_id)
-
-        if not deleted:
-            raise ValueError("Expense not found.")
-
-        await self.session.commit()
-
-        return True
-
-    async def get_family_total(
-        self,
-        family_id: UUID,
-    ):
-
-        return await self.repository.get_total_for_family(family_id)
-
-    async def get_family_count(
-        self,
-        family_id: UUID,
-    ):
-
-        return await self.repository.get_count_for_family(family_id)
+        await self._repository.assert_scope(query.family_id, query.member_id)
+        return await self._repository.summary(query)

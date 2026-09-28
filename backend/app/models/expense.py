@@ -1,71 +1,60 @@
-import uuid
+"""Expense ORM model."""
+
 from datetime import date, datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
 
-from sqlalchemy import Date, DateTime, ForeignKey, Index, Numeric, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Numeric,
+    String,
+    Text,
+    Uuid,
+    func,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship, synonym
 
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.models.family import Family
+    from app.models.family_member import FamilyMember
 
 
 class Expense(Base):
     __tablename__ = "expenses"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_expenses_amount_positive"),
+        Index("ix_expenses_family_id", "family_id"),
+        Index("ix_expenses_member_id", "member_id"),
+        Index("ix_expenses_expense_date", "expense_date"),
+        Index("ix_expenses_category", "category"),
+        Index("ix_expenses_family_date", "family_id", "expense_date"),
+        Index("ix_expenses_family_category_date", "family_id", "category", "expense_date"),
     )
 
-    family_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("families.id", ondelete="CASCADE"),
-        nullable=False,
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    family_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("families.id", ondelete="CASCADE"), nullable=False, index=True
     )
-
-    member_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("family_members.id", ondelete="SET NULL"),
-        nullable=True,
+    member_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("family_members.id", ondelete="SET NULL"), nullable=True, index=True
     )
-
-    amount: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2),
-        nullable=False,
-    )
-
-    category: Mapped[str] = mapped_column(
-        String(100),
-        nullable=False,
-    )
-
-    merchant: Mapped[str | None] = mapped_column(
-        String(200),
-        nullable=True,
-    )
-
-    expense_date: Mapped[date] = mapped_column(
-        Date,
-        nullable=False,
-    )
-
-    description: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True,
-    )
-
-    source: Mapped[str | None] = mapped_column(
-        String(50),
-        nullable=True,
-    )
-
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    category: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    merchant: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expense_date: Mapped[date] = mapped_column(Date, nullable=False)
+    source: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    source_type = synonym("source")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -73,20 +62,5 @@ class Expense(Base):
         nullable=False,
     )
 
-    family = relationship(
-        "Family",
-        back_populates="expenses",
-    )
-
-    member = relationship(
-        "FamilyMember",
-        back_populates="expenses",
-    )
-
-    __table_args__ = (
-        Index("ix_expenses_family_id", "family_id"),
-        Index("ix_expenses_member_id", "member_id"),
-        Index("ix_expenses_expense_date", "expense_date"),
-        Index("ix_expenses_category", "category"),
-        Index("ix_expenses_family_date", "family_id", "expense_date"),
-    )
+    family: Mapped["Family"] = relationship(back_populates="expenses")
+    member: Mapped["FamilyMember | None"] = relationship(back_populates="expenses")

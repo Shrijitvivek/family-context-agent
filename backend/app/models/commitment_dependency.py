@@ -1,5 +1,8 @@
-import uuid
+"""Directed prerequisite links between commitments."""
+
 from datetime import datetime
+from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
 
 from sqlalchemy import (
     CheckConstraint,
@@ -8,57 +11,20 @@ from sqlalchemy import (
     Index,
     String,
     UniqueConstraint,
+    Uuid,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, synonym
 
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.models.commitment import Commitment
+    from app.models.family import Family
 
 
 class CommitmentDependency(Base):
     __tablename__ = "commitment_dependencies"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-    )
-
-    source_commitment_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("commitments.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-
-    target_commitment_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("commitments.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-
-    dependency_type: Mapped[str] = mapped_column(
-        String(50),
-        nullable=False,
-        default="MUST_COMPLETE_BEFORE",
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
-
-    source_commitment = relationship(
-        "Commitment",
-        foreign_keys=[source_commitment_id],
-    )
-
-    target_commitment = relationship(
-        "Commitment",
-        foreign_keys=[target_commitment_id],
-    )
-
     __table_args__ = (
         UniqueConstraint(
             "source_commitment_id",
@@ -78,4 +44,34 @@ class CommitmentDependency(Base):
             "ix_commitment_dependencies_target",
             "target_commitment_id",
         ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    family_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("families.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    source_commitment_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("commitments.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    target_commitment_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("commitments.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    dependency_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="MUST_COMPLETE_BEFORE",
+    )
+    relationship_type = synonym("dependency_type")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    family: Mapped["Family | None"] = relationship(back_populates="dependencies")
+    source_commitment: Mapped["Commitment"] = relationship(
+        back_populates="outgoing_dependencies",
+        foreign_keys=[source_commitment_id],
+    )
+    target_commitment: Mapped["Commitment"] = relationship(
+        back_populates="incoming_dependencies",
+        foreign_keys=[target_commitment_id],
     )
