@@ -1,53 +1,62 @@
-"""Database access for conversations and their messages."""
+"""Conversation repository.
+
+TODO:
+- Persist conversations and messages.
+- Retrieve only the bounded recent context required by the agent.
+"""
+
 
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import NotFoundError
 from app.models.conversation import Conversation
-from app.models.message import Message
 
 
 class ConversationRepository:
-    def __init__(self, session: AsyncSession) -> None:
-        self._session = session
+    """Database operations for conversations."""
 
-    async def get(self, family_id: UUID, conversation_id: UUID) -> Conversation:
-        conversation = await self._session.get(Conversation, conversation_id)
-        if conversation is None or conversation.family_id != family_id:
-            raise NotFoundError("Conversation", conversation_id)
-        return conversation
+    def __init__(self, session: AsyncSession):
+        self.session = session
 
-    async def create(self, family_id: UUID) -> Conversation:
-        conversation = Conversation(family_id=family_id)
-        self._session.add(conversation)
-        await self._session.flush()
-        return conversation
+    async def create(
+        self,
+        family_id: UUID,
+    ) -> Conversation:
 
-    async def add_message(self, conversation_id: UUID, role: str, content: str) -> Message:
-        message = Message(conversation_id=conversation_id, role=role, content=content)
-        self._session.add(message)
-        await self._session.flush()
-        await self._session.refresh(message)
-        return message
-
-    async def recent_messages(self, conversation_id: UUID, limit: int) -> list[Message]:
-        """Return the latest ``limit`` messages, oldest first."""
-
-        statement = (
-            select(Message)
-            .where(Message.conversation_id == conversation_id)
-            .order_by(Message.created_at.desc(), Message.id.desc())
-            .limit(limit)
+        conversation = Conversation(
+            family_id=family_id,
         )
-        messages = list((await self._session.scalars(statement)).all())
-        messages.reverse()
-        return messages
 
-    async def commit(self) -> None:
-        await self._session.commit()
+        self.session.add(conversation)
 
-    async def rollback(self) -> None:
-        await self._session.rollback()
+        await self.session.flush()
+        await self.session.refresh(conversation)
+
+        return conversation
+
+    async def get_by_id(
+        self,
+        conversation_id: UUID,
+    ) -> Conversation | None:
+
+        result = await self.session.execute(
+            select(Conversation)
+            .where(Conversation.id == conversation_id)
+        )
+
+        return result.scalar_one_or_none()
+
+    async def get_by_family(
+        self,
+        family_id: UUID,
+    ) -> list[Conversation]:
+
+        result = await self.session.execute(
+            select(Conversation)
+            .where(Conversation.family_id == family_id)
+            .order_by(Conversation.updated_at.desc())
+        )
+
+        return list(result.scalars().all())
