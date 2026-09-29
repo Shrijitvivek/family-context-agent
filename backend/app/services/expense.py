@@ -39,3 +39,9 @@ class ExpenseService:
 
         await self._repository.assert_scope(query.family_id, query.member_id)
         return await self._repository.summary(query)
+
+    async def list_expenses(self, query: ExpenseSummaryQuery) -> list[Expense]:
+        """List expenses using the same filters as the summary."""
+
+        await self._repository.assert_scope(query.family_id, query.member_id)
+        return await self._repository.list_expenses(query)

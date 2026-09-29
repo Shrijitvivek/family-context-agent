@@ -1,18 +1,13 @@
 """Family priority agent tools exposed to the Family Context Agent."""
 
-from app.schemas.commitment import (
-    CommitmentRead,
-    GetFamilyPrioritiesQuery,
-    GetFamilyPrioritiesToolResult,
-)
-from app.services.commitment import CommitmentService
+from app.schemas.commitment import GetFamilyPrioritiesQuery
+from app.schemas.priority import GetFamilyPrioritiesToolResult
+from app.services.priority import PriorityService
 
 
 async def get_family_priorities(
-    service: CommitmentService, query: GetFamilyPrioritiesQuery
+    service: PriorityService, query: GetFamilyPrioritiesQuery
 ) -> GetFamilyPrioritiesToolResult:
-    """Get upcoming and priority commitments for a family."""
-    results = await service.get_family_priorities(query)
-    return GetFamilyPrioritiesToolResult(
-        commitments=[CommitmentRead.model_validate(c) for c in results]
-    )
+    """Return the same attention items (with reasons) as the Priorities screen."""
+    items = await service.attention_items(query.family_id)
+    return GetFamilyPrioritiesToolResult(items=items)

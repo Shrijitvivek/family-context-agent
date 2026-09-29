@@ -1,7 +1,8 @@
-"""Validated registry for the implemented agent tools.
+"""Validated registry for the agent tools.
 
-The remaining four planned MVP tools are intentionally not registered here yet:
-an agent can only call a tool that has an implemented service behind it.
+Every tool is a thin wrapper over the same service method the REST API uses, so
+the agent and the UI always follow the same business rules. An agent can only call
+a tool that is registered here.
 """
 
 from collections.abc import Awaitable, Callable, Mapping
@@ -18,7 +19,6 @@ from app.schemas.commitment import (
     CreateCommitmentToolResult,
     CreateDependencyToolResult,
     GetFamilyPrioritiesQuery,
-    GetFamilyPrioritiesToolResult,
     SearchCommitmentsQuery,
     SearchCommitmentsToolResult,
     UpdateCommitmentToolResult,
@@ -29,8 +29,10 @@ from app.schemas.expense import (
     ExpenseSummaryQuery,
     ExpenseSummaryToolResult,
 )
+from app.schemas.priority import GetFamilyPrioritiesToolResult
 from app.services.commitment import CommitmentService
 from app.services.expense import ExpenseService
+from app.services.priority import PriorityService
 from app.tools.commitment_tools import (
     create_commitment,
     search_commitments,
@@ -74,10 +76,13 @@ class RegisteredTool:
 
 class ToolRegistry:
     """Binds request-scoped services to the seven Family Context tools."""
+    """Binds request-scoped services to the seven registered tools."""
+
     def __init__(
         self,
         expense_service: ExpenseService,
         commitment_service: CommitmentService,
+        priority_service: PriorityService,
     ) -> None:
         async def add_expense_handler(payload: BaseModel) -> AddExpenseToolResult:
             return await add_expense(expense_service, ExpenseCreate.model_validate(payload))
@@ -111,7 +116,7 @@ class ToolRegistry:
             payload: BaseModel,
         ) -> GetFamilyPrioritiesToolResult:
             return await get_family_priorities(
-                commitment_service, GetFamilyPrioritiesQuery.model_validate(payload)
+                priority_service, GetFamilyPrioritiesQuery.model_validate(payload)
             )
 
         definitions = (
@@ -155,7 +160,10 @@ class ToolRegistry:
             ),
             RegisteredTool(
                 name="get_family_priorities",
-                description="Get upcoming and high-priority commitments for the family.",
+                description=(
+                    "Get what needs the family's attention now: overdue items, items due "
+                    "soon, and unfinished prerequisites, each with the reason."
+                ),
                 input_model=GetFamilyPrioritiesQuery,
                 handler=get_family_priorities_handler,
             ),

@@ -16,7 +16,6 @@ from app.models.family_member import FamilyMember
 from app.schemas.commitment import (
     CommitmentDependencyCreate,
     CommitmentUpdate,
-    GetFamilyPrioritiesQuery,
     SearchCommitmentsQuery,
 )
 
@@ -128,6 +127,10 @@ class CommitmentRepository:
         if payload.due_date is not None:
             commitment.due_date = payload.due_date
 
+        # Load server-generated values (completed_at, updated_at) so callers can
+        # serialise the row without an implicit lazy load in async code.
+        await self._session.flush()
+        await self._session.refresh(commitment)
         return commitment
 
     async def add_dependency(self, payload: CommitmentDependencyCreate) -> CommitmentDependency:
@@ -147,6 +150,7 @@ class CommitmentRepository:
         )
         self._session.add(dependency)
         await self._session.flush()
+        await self._session.refresh(dependency)
         return dependency
 
     async def get_priorities(self, query: GetFamilyPrioritiesQuery) -> list[Commitment]:
@@ -170,10 +174,32 @@ class CommitmentRepository:
             .order_by(
                 priority_order,
                 Commitment.due_date.asc().nulls_last()
+    async def get(self, family_id: UUID, commitment_id: UUID) -> Commitment:
+        commitment = await self._session.get(Commitment, commitment_id)
+        if commitment is None or commitment.family_id != family_id:
+            raise NotFoundError("Commitment", commitment_id)
+        return commitment
+
+    async def dependency_exists(
+        self, source_commitment_id: UUID, target_commitment_id: UUID, relationship_type: str
+    ) -> bool:
+        existing = await self._session.scalar(
+            select(CommitmentDependency.id).where(
+                CommitmentDependency.source_commitment_id == source_commitment_id,
+                CommitmentDependency.target_commitment_id == target_commitment_id,
+                CommitmentDependency.dependency_type == relationship_type,
             )
-            .limit(10)
         )
-        return list((await self._session.scalars(statement)).all())
+        return existing is not None
+
+    async def list_dependency_edges(self, family_id: UUID) -> list[tuple[UUID, UUID]]:
+        """Return (source, target) pairs for every dependency in one family."""
+
+        statement = select(
+            CommitmentDependency.source_commitment_id,
+            CommitmentDependency.target_commitment_id,
+        ).where(CommitmentDependency.family_id == family_id)
+        return [(row[0], row[1]) for row in (await self._session.execute(statement)).all()]
 
     async def add(self, commitment: Commitment) -> Commitment:
         self._session.add(commitment)

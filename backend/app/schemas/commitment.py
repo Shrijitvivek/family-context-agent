@@ -129,6 +129,15 @@ class CommitmentUpdate(BaseModel):
     due_date: date | None = None
 
 
+class CommitmentUpdateRequest(BaseModel):
+    """API body for updating a commitment; the id comes from the URL path."""
+
+    family_id: UUID
+    status: CommitmentStatus | None = None
+    priority: Priority | None = None
+    due_date: date | None = None
+
+
 class UpdateCommitmentToolResult(BaseModel):
     success: Literal[True] = True
     commitment_id: UUID
@@ -150,6 +159,17 @@ class CommitmentDependencyCreate(BaseModel):
         return self
 
 
+class CommitmentDependencyRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    family_id: UUID | None
+    source_commitment_id: UUID
+    target_commitment_id: UUID
+    relationship_type: str
+    created_at: datetime
+
+
 class CreateDependencyToolResult(BaseModel):
     success: Literal[True] = True
     message: str = "Dependency created"
@@ -161,6 +181,16 @@ class GetFamilyPrioritiesQuery(BaseModel):
     family_id: UUID
 
 
-class GetFamilyPrioritiesToolResult(BaseModel):
-    success: Literal[True] = True
+
+class TimelineDay(BaseModel):
+    """All dated commitments that fall due on one day."""
+
+    day: date
     commitments: list[CommitmentRead]
+
+
+class TimelineResponse(BaseModel):
+    family_id: UUID
+    start_date: date | None
+    end_date: date | None
+    days: list[TimelineDay]
