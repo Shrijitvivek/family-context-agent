@@ -4,6 +4,32 @@ Deterministic only: marks overdue items and syncs notifications through the
 priority service. Never calls the AI model. Each recalculation uses its own
 database session, so it cannot interfere with the request or job that triggered it.
 """
+# backend/app/jobs/deadline_checker.py
+
+from datetime import datetime
+
+
+async def check_deadlines(db):
+
+    """
+    Check commitments whose deadlines are approaching.
+
+    The actual query should use the Commitment model
+    from Team 1.
+    """
+
+    now = datetime.utcnow()
+
+    print(
+        f"Checking commitment deadlines at {now}"
+    )
+
+    # Later:
+    #
+    # 1. Query pending commitments.
+    # 2. Find deadlines approaching.
+    # 3. Prevent duplicate notifications.
+    # 4. Create notification records.
 
 import logging
 from uuid import UUID

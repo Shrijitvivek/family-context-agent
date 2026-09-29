@@ -2,7 +2,7 @@
 
 from datetime import date
 from uuid import UUID
-
+from sqlalchemy import case
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -146,13 +146,34 @@ class CommitmentRepository:
             family_id=payload.family_id,
             source_commitment_id=payload.source_commitment_id,
             target_commitment_id=payload.target_commitment_id,
-            relationship_type=payload.relationship_type
+            dependency_type=payload.relationship_type,
         )
         self._session.add(dependency)
         await self._session.flush()
         await self._session.refresh(dependency)
         return dependency
 
+    async def get_priorities(self, query: GetFamilyPrioritiesQuery) -> list[Commitment]:
+        conditions = [
+            Commitment.family_id == query.family_id,
+            Commitment.status.in_(("PENDING", "IN_PROGRESS", "SCHEDULED", "OVERDUE"))
+        ]
+        
+        # We define a case statement to order by priority (CRITICAL -> HIGH -> MEDIUM -> LOW)
+        priority_order = case(
+            (Commitment.priority == "CRITICAL", 1),
+            (Commitment.priority == "HIGH", 2),
+            (Commitment.priority == "MEDIUM", 3),
+            (Commitment.priority == "LOW", 4),
+            else_=5
+        )
+        
+        statement = (
+            select(Commitment)
+            .where(*conditions)
+            .order_by(
+                priority_order,
+                Commitment.due_date.asc().nulls_last()
     async def get(self, family_id: UUID, commitment_id: UUID) -> Commitment:
         commitment = await self._session.get(Commitment, commitment_id)
         if commitment is None or commitment.family_id != family_id:

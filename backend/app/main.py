@@ -1,3 +1,28 @@
+"""
+FastAPI application entry point.
+"""
+
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.api.v1.endpoints.chat import router as chat_router
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Application startup and shutdown lifecycle.
+    """
+
+    # Startup
+    print("Family Context Agent starting...")
+
+    yield
+
+    # Shutdown
+    print("Family Context Agent shutting down...")
 """FastAPI application entry point."""
 
 from collections.abc import AsyncIterator
@@ -46,6 +71,15 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title="Family Context Agent",
+    description="AI-powered family context and decision assistant.",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -59,6 +93,10 @@ app.add_middleware(
 )
 
 
+app.include_router(
+    chat_router,
+    prefix="/api/v1",
+)
 @app.exception_handler(FamilyContextError)
 async def handle_domain_error(_: Request, exc: FamilyContextError) -> JSONResponse:
     status_code = next(
