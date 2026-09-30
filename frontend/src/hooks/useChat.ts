@@ -38,16 +38,17 @@ export function useChat() {
 
     try {
       const response = await sendMessage({
+        family_id:"02bfdbac-cd58-47c1-ab0f-e8a6b8552c12",
         conversation_id: conversationId,
         message,
       });
 
-      setConversationId(response.conversation_id);
+      setConversationId(response.conversation_id ?? undefined);
 
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
         role: "assistant",
-        content: response.response,
+        content: response.message ?? "",
       };
 
       setMessages((current) => [...current, assistantMessage]);

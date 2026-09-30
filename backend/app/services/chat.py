@@ -1,10 +1,3 @@
-"""Chat workflow service.
-
-TODO:
-- Persist messages, invoke the agent, execute validated actions, and build API responses.
-- Preserve clarification context across turns.
-- Never claim success until persistence succeeds.
-"""
 """Chat workflow service."""
 
 from uuid import UUID
@@ -17,8 +10,11 @@ from app.clients.ai_model import AIModelClient
 from app.repositories.agent_event import AgentEventRepository
 from app.repositories.commitment import CommitmentRepository
 from app.repositories.expense import ExpenseRepository
+from app.repositories.notification import NotificationRepository
 from app.services.commitment import CommitmentService
 from app.services.expense import ExpenseService
+from app.services.notification import NotificationService
+from app.services.priority import PriorityService
 from app.tools.registry import ToolRegistry
 
 
@@ -30,13 +26,20 @@ class ChatService:
 
         expense_repository = ExpenseRepository(session)
         commitment_repository = CommitmentRepository(session)
+        notification_repository = NotificationRepository(session)
 
         expense_service = ExpenseService(expense_repository)
         commitment_service = CommitmentService(commitment_repository)
+        notification_service = NotificationService(notification_repository)
+        priority_service = PriorityService(
+            commitments=commitment_repository,
+            notifications=notification_service,
+        )
 
         tool_registry = ToolRegistry(
             expense_service=expense_service,
             commitment_service=commitment_service,
+            priority_service=priority_service,
         )
 
         self._agent = FamilyContextAgent(
@@ -55,7 +58,6 @@ class ChatService:
         message: str,
     ) -> AgentState:
         """Run one user message through the agent."""
-
         state = AgentState(
             family_id=family_id,
             user_id=user_id,
@@ -72,26 +74,17 @@ class ChatService:
                 description="Family Context Agent processed a chat message.",
                 event_data={
                     "conversation_id": (
-                        str(conversation_id)
-                        if conversation_id
-                        else None
+                        str(conversation_id) if conversation_id else None
                     ),
-                    "user_id": (
-                        str(user_id)
-                        if user_id
-                        else None
-                    ),
+                    "user_id": str(user_id) if user_id else None,
                     "message": message,
                     "tool_calls": state.tool_calls,
                     "tool_results": state.tool_results,
-                    "requires_clarification": (
-                        state.requires_clarification
-                    ),
+                    "requires_clarification": state.requires_clarification,
                 },
             )
 
             await self._event_repository.commit()
-
             return state
 
         except Exception:

@@ -17,6 +17,7 @@ from app.schemas.commitment import (
     CommitmentDependencyCreate,
     CommitmentUpdate,
     SearchCommitmentsQuery,
+    GetFamilyPrioritiesQuery,
 )
 
 
@@ -173,7 +174,13 @@ class CommitmentRepository:
             .where(*conditions)
             .order_by(
                 priority_order,
-                Commitment.due_date.asc().nulls_last()
+                Commitment.due_date.asc().nulls_last(),
+            )
+        )
+
+        result = await self._session.scalars(statement)
+        return list(result.all())
+
     async def get(self, family_id: UUID, commitment_id: UUID) -> Commitment:
         commitment = await self._session.get(Commitment, commitment_id)
         if commitment is None or commitment.family_id != family_id:

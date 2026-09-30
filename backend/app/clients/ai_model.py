@@ -10,7 +10,7 @@ Responsibilities:
 """
 
 import json
-import os
+from app.core.config import Settings
 from dataclasses import dataclass
 from typing import Any
 
@@ -32,17 +32,11 @@ class AIResponse:
 
 class AIModelClient:
     def __init__(self) -> None:
-        self.api_key = os.getenv("NEBIUS_API_KEY")
+        settings = Settings()
 
-        self.base_url = os.getenv(
-            "NEBIUS_API_URL",
-            "https://api.tokenfactory.us-central1.nebius.com/v1",
-        )
-
-        self.model = os.getenv(
-            "NEBIUS_MODEL",
-            "nvidia/nemotron-3-super-120b-a12b",
-        )
+        self.api_key = settings.nebius_api_key
+        self.base_url = settings.nebius_base_url
+        self.model = settings.nvidia_model_name
 
         if not self.api_key:
             raise ValueError("NEBIUS_API_KEY is not configured.")
