@@ -1,31 +1,8 @@
-﻿"""
-Family Context Agent orchestration.
-
-Flow:
-User
-  Γåô
-AI / Nemotron
-  Γåô
-Tool selection
-  Γåô
-Tool Registry
-  Γåô
-Service
-  Γåô
-PostgreSQL
-  Γåô
-Tool result
-  Γåô
-AI / Nemotron
-  Γåô
-Final response
-"""
-
-import json
+﻿import json
 from datetime import date
 from typing import Any
 
-from app.agents.prompts import SYSTEM_PROMPT, build_user_prompt
+from app.agents.prompts import SYSTEM_PROMPT
 from app.agents.state import AgentState
 from app.clients.ai_model import AIModelClient
 from app.tools.registry import ToolRegistry
@@ -46,14 +23,17 @@ class FamilyContextAgent:
                 "role": "system",
                 "content": SYSTEM_PROMPT,
             },
-            {
-                "role": "user",
-                "content": build_user_prompt(state.user_message),
-            },
         ]
 
-        tool_definitions = self.tool_registry.definitions()
+        for history_message in state.history:
+            messages.append(
+                {
+                    "role": history_message["role"],
+                    "content": history_message["content"],
+                }
+            )
 
+        tool_definitions = self.tool_registry.definitions()
         max_tool_rounds = 5
 
         for _ in range(max_tool_rounds):
@@ -122,7 +102,6 @@ class FamilyContextAgent:
                         tool_call.name,
                         arguments,
                     )
-
                 except Exception as exc:
                     result = {
                         "success": False,
@@ -154,5 +133,4 @@ class FamilyContextAgent:
             "I couldn't complete the request safely. "
             "Please try again."
         )
-
         return state

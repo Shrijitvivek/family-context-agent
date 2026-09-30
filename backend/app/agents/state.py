@@ -13,6 +13,8 @@ class AgentState:
 
     user_message: str
 
+    history: list[dict[str, str]] = field(default_factory=list)
+
     assistant_message: str | None = None
 
     tool_calls: list[dict[str, Any]] = field(
