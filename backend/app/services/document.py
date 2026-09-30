@@ -16,7 +16,7 @@ from pydantic import ValidationError
 from pypdf import PdfReader
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.clients.ai_model import ModelClient
+from app.clients.ai_model import AIModelClient
 from app.clients.storage import StorageClient
 from app.core.constants import CommitmentType, DocumentStatus, SourceType
 from app.core.exceptions import (
@@ -91,7 +91,7 @@ class DocumentService:
         commitments: CommitmentRepository,
         commitment_service: CommitmentService,
         storage: StorageClient,
-        model: ModelClient,
+        model: AIModelClient,
         *,
         allowed_types: frozenset[str],
         max_bytes: int,
