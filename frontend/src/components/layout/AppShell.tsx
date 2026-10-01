@@ -12,8 +12,11 @@
  */
 
 import { useState } from "react";
+
 import { Menu, X } from "lucide-react";
+
 import Navigation from "./Navigation";
+import { useFamily } from "../../context/FamilyContext";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -22,6 +25,12 @@ interface AppShellProps {
 export default function AppShell({ children }: AppShellProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  const {
+    families,
+    selectedFamilyId,
+    setSelectedFamilyId,
+  } = useFamily();
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       {/* Desktop Sidebar */}
@@ -29,9 +38,36 @@ export default function AppShell({ children }: AppShellProps) {
         <div className="flex h-full flex-col">
           <div className="border-b border-slate-200 px-6 py-5">
             <h1 className="text-xl font-bold">Family Context</h1>
+
             <p className="mt-1 text-sm text-slate-500">
               Family assistant
             </p>
+
+            {families.length > 0 && (
+              <div className="mt-4">
+                <label
+                  htmlFor="family-selector"
+                  className="mb-1 block text-xs font-medium text-slate-500"
+                >
+                  Family
+                </label>
+
+                <select
+                  id="family-selector"
+                  value={selectedFamilyId ?? ""}
+                  onChange={(event) =>
+                    setSelectedFamilyId(event.target.value)
+                  }
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                >
+                  {families.map((family) => (
+                    <option key={family.id} value={family.id}>
+                      {family.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           <div className="flex-1 px-4 py-6">
@@ -58,10 +94,35 @@ export default function AppShell({ children }: AppShellProps) {
       </header>
 
       {/* Mobile Navigation */}
-      {mobileMenuOpen && (
-        <div className="border-b border-slate-200 bg-white px-4 py-4 lg:hidden">
-          <Navigation />
+     {mobileMenuOpen && (
+  <div className="border-b border-slate-200 bg-white px-4 py-4 lg:hidden">
+    {families.length > 0 && (
+      <div className="mb-4">
+        <label
+          htmlFor="mobile-family-selector"
+          className="mb-1 block text-xs font-medium text-slate-500"
+        >
+          Family
+        </label>
 
+        <select
+          id="mobile-family-selector"
+          value={selectedFamilyId ?? ""}
+          onChange={(event) =>
+            setSelectedFamilyId(event.target.value)
+          }
+          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+        >
+          {families.map((family) => (
+            <option key={family.id} value={family.id}>
+              {family.name}
+            </option>
+          ))}
+        </select>
+      </div>
+    )}
+
+    <Navigation />
           <button
             type="button"
             onClick={() => setMobileMenuOpen(false)}
