@@ -1,14 +1,37 @@
 """FastAPI application entry point."""
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.v1.router import api_router
+from app.core.exceptions import FamilyContextError
 
 app = FastAPI(
     title="Family Context Agent",
     version="1.0.0",
 )
+
+
+# Exception handlers for the Family Context Agent API.
+@app.exception_handler(FamilyContextError)
+async def family_context_error_handler(
+    request: Request,
+    exc: FamilyContextError,
+) -> JSONResponse:
+    status_code = 409 if exc.code.startswith(
+        ("conflict", "duplicate", "dependency_")
+    ) else 400
+
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "code": exc.code,
+            "message": str(exc),
+            "details": exc.details,
+        },
+    )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,4 +49,4 @@ app.include_router(
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok"} 
+    return {"status": "ok"}

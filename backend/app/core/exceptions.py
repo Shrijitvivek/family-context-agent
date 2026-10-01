@@ -63,6 +63,16 @@ class DependencyCycleError(ConflictError):
     def __init__(self) -> None:
         super().__init__("This dependency would create a cycle.")
 
+# define a new error class for when a dependency is blocked
+class DependencyBlockedError(ConflictError):
+    code = "dependency_blocked"
+
+    def __init__(self, title: str) -> None:
+        super().__init__(
+            f"Cannot complete '{title}' because a required dependency "
+            "has not been completed."
+        )
+
 
 class InvalidStatusTransitionError(ConflictError):
     code = "invalid_status_transition"
