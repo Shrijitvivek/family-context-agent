@@ -15,7 +15,7 @@ import { useState } from "react";
 import { sendMessage } from "../services/api/chat";
 import type { ChatMessage } from "../components/chat/MessageList";
 
-export function useChat() {
+export function useChat(familyId: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
@@ -38,7 +38,7 @@ export function useChat() {
 
     try {
       const response = await sendMessage({
-        family_id:"02bfdbac-cd58-47c1-ab0f-e8a6b8552c12",
+        family_id: familyId,
         conversation_id: conversationId,
         message,
       });

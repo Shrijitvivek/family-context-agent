@@ -18,10 +18,12 @@ import ExpensesPage from "./pages/ExpensesPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import DemoPage from "./pages/DemoPage";
 import NotFoundPage from "./pages/NotFoundPage";
+import { FamilyProvider } from "./context/FamilyContext";
 
 export default function App() {
   return (
-    <BrowserRouter>
+  <BrowserRouter>
+    <FamilyProvider>
       <AppShell>
         <Routes>
           <Route path="/" element={<HomePage />} />
@@ -33,6 +35,7 @@ export default function App() {
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </AppShell>
-    </BrowserRouter>
-  );
+    </FamilyProvider>
+  </BrowserRouter>
+);
 }
