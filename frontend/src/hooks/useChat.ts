@@ -38,7 +38,7 @@ export function useChat() {
 
     try {
       const response = await sendMessage({
-        family_id:"02bfdbac-cd58-47c1-ab0f-e8a6b8552c12",
+        family_id:"f82aa88d-a390-5f42-90ec-b15f8f027edb",
         conversation_id: conversationId,
         message,
       });
