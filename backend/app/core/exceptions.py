@@ -83,3 +83,23 @@ class PersistenceError(FamilyContextError):
 
 class ToolInputValidationError(FamilyContextError):
     code = "invalid_tool_input"
+
+
+class InvalidUploadError(FamilyContextError):
+    code = "invalid_upload"
+
+
+class DocumentStateError(ConflictError):
+    code = "invalid_document_state"
+
+    def __init__(self, current_status: str | None, action: str) -> None:
+        super().__init__(
+            f"Cannot {action} a document whose status is {current_status}.",
+            details={"current_status": current_status},
+        )
+
+
+class AIModelError(FamilyContextError):
+    """The model provider is unconfigured, unreachable, or returned unusable output."""
+
+    code = "ai_model_unavailable"

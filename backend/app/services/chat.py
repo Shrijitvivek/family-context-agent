@@ -1,33 +1,58 @@
-
-"""
-Chat service for the Family Context Agent.
-"""
+"""Chat workflow service."""
 
 from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.orchestrator import FamilyContextAgent
 from app.agents.state import AgentState
 from app.clients.ai_model import AIModelClient
 from app.repositories.agent_event import AgentEventRepository
+from app.repositories.conversation import ConversationRepository
+from app.repositories.commitment import CommitmentRepository
+from app.repositories.expense import ExpenseRepository
+from app.repositories.notification import NotificationRepository
+from app.services.commitment import CommitmentService
+from app.services.expense import ExpenseService
+from app.services.notification import NotificationService
+from app.services.priority import PriorityService
 from app.tools.registry import ToolRegistry
 
-
 class ChatService:
-    """Service responsible for running the Family Context Agent."""
+    """Coordinates chat requests with the Family Context Agent."""
 
     def __init__(
         self,
-        ai_client: AIModelClient,
-        tool_registry: ToolRegistry,
-        agent_event_repository: AgentEventRepository,
+        session: AsyncSession,
     ) -> None:
+        self._session = session
 
-        self.agent = FamilyContextAgent(
-            ai_client=ai_client,
+        expense_repository = ExpenseRepository(session)
+        commitment_repository = CommitmentRepository(session)
+        notification_repository = NotificationRepository(session)
+
+        expense_service = ExpenseService(expense_repository)
+        commitment_service = CommitmentService(commitment_repository)
+        notification_service = NotificationService(notification_repository)
+
+        priority_service = PriorityService(
+            commitments=commitment_repository,
+            notifications=notification_service,
+        )
+
+        tool_registry = ToolRegistry(
+            expense_service=expense_service,
+            commitment_service=commitment_service,
+            priority_service=priority_service,
+        )
+
+        self._agent = FamilyContextAgent(
+            ai_client=AIModelClient(),
             tool_registry=tool_registry,
         )
 
-        self.agent_event_repository = agent_event_repository
+        self._conversation_repository = ConversationRepository(session)
+        self._event_repository = AgentEventRepository(session)
 
     async def process_message(
         self,
@@ -37,27 +62,39 @@ class ChatService:
         conversation_id: UUID | None,
         message: str,
     ) -> AgentState:
-        """Run one user message through the Family Context Agent."""
+        """Run one user message through the agent."""
 
-        # -----------------------------------------
-        # Record agent start
-        # -----------------------------------------
-
-        await self.agent_event_repository.create(
+        await self._event_repository.add(
             family_id=family_id,
             event_type="agent_started",
-            description=(
-                "Family Context Agent started processing a message."
-            ),
+            description="Family Context Agent started processing a message.",
             event_data={
                 "user_id": str(user_id) if user_id else None,
-                "conversation_id": (
-                    str(conversation_id)
-                    if conversation_id
-                    else None
-                ),
+                "conversation_id": str(conversation_id) if conversation_id else None,
                 "message": message,
             },
+        )
+
+        if conversation_id:
+            conversation = await self._conversation_repository.get(
+                family_id,
+                conversation_id,
+            )
+        else:
+            conversation = await self._conversation_repository.create(
+                family_id
+            )
+            conversation_id = conversation.id
+
+        history = await self._conversation_repository.recent_messages(
+            conversation_id,
+            limit=20,
+        )
+
+        await self._conversation_repository.add_message(
+            conversation_id=conversation_id,
+            role="user",
+            content=message,
         )
 
         state = AgentState(
@@ -65,68 +102,70 @@ class ChatService:
             user_id=user_id,
             conversation_id=conversation_id,
             user_message=message,
+            history=[
+                {
+                    "role": item.role,
+                    "content": item.content,
+                }
+                for item in history
+            ]
+            + [
+                {
+                    "role": "user",
+                    "content": message,
+                }
+            ],
         )
 
         try:
+            state = await self._agent.run(state)
 
-            # -----------------------------------------
-            # Run the actual agent
-            # -----------------------------------------
+            if state.assistant_message:
+                await self._conversation_repository.add_message(
+                    conversation_id=conversation_id,
+                    role="assistant",
+                    content=state.assistant_message,
+                )
 
-            state = await self.agent.run(state)
-
-            # -----------------------------------------
-            # Record successful completion
-            # -----------------------------------------
-
-            await self.agent_event_repository.create(
+            await self._event_repository.add(
                 family_id=family_id,
-                event_type="agent_completed",
-                description=(
-                    "Family Context Agent completed successfully."
-                ),
+                event_type="agent_run",
+                description="Family Context Agent processed a chat message.",
                 event_data={
                     "conversation_id": (
-                        str(state.conversation_id)
-                        if state.conversation_id
+                        str(conversation_id)
+                        if conversation_id
                         else None
                     ),
+                    "user_id": str(user_id) if user_id else None,
+                    "message": message,
+                    "tool_calls": state.tool_calls,
+                    "tool_results": state.tool_results,
+                    "requires_clarification": (
+                        state.requires_clarification
+                    ),
+                },
+            )
+
+            await self._event_repository.add(
+                family_id=family_id,
+                event_type="agent_completed",
+                description="Family Context Agent completed successfully.",
+                event_data={
+                    "conversation_id": str(conversation_id) if conversation_id else None,
                     "tool_count": len(state.tool_calls),
                 },
             )
-
-            # Important:
-            # Persist the completed event.
-            await self.agent_event_repository.db.commit()
-
+            await self._event_repository.commit()
             return state
 
         except Exception as exc:
-
-            # -----------------------------------------
-            # Roll back any uncommitted changes
-            # before recording the failure event.
-            # -----------------------------------------
-
-            await self.agent_event_repository.db.rollback()
-
-            # -----------------------------------------
-            # Record agent failure
-            # -----------------------------------------
-
-            await self.agent_event_repository.create(
+            await self._event_repository.rollback()
+            await self._event_repository.add(
                 family_id=family_id,
                 event_type="agent_failed",
-                description=(
-                    "Family Context Agent failed while "
-                    "processing the message."
-                ),
-                event_data={
-                    "error": str(exc),
-                },
+                description="Family Context Agent failed while processing the message.",
+                event_data={"error": str(exc)},
             )
-
-            # Persist the failure event.
-            await self.agent_event_repository.db.commit()
-
+            await self._event_repository.commit()
             raise

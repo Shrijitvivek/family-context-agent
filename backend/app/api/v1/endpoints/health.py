@@ -1,6 +1,18 @@
-"""Health endpoint.
+"""Health endpoint. Never calls the AI model."""
 
-TODO:
-- Return service readiness without invoking the AI model.
-- Optionally report database and scheduler health for deployments.
-"""
+from fastapi import APIRouter
+from sqlalchemy import text
+
+from app.api.dependencies import DbSession
+
+router = APIRouter(tags=["health"])
+
+
+@router.get("/health")
+async def health(session: DbSession) -> dict[str, str]:
+    try:
+        await session.execute(text("SELECT 1"))
+        database = "ok"
+    except Exception:
+        database = "unavailable"
+    return {"status": "ok", "database": database}

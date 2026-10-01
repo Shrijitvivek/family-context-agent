@@ -1,39 +1,48 @@
+"""Shared FastAPI dependencies.
 
+TODO:
+- Provide database sessions and authenticated/demo family context.
+- Resolve request IDs and other request-scoped resources.
+- Keep dependency functions thin and free of business rules.
 """
-FastAPI dependencies for database-backed services and tools.
-"""
+"""Shared FastAPI dependencies."""
 
-from fastapi import Depends
+from collections.abc import AsyncGenerator
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.orchestrator import FamilyContextAgent
 from app.clients.ai_model import AIModelClient
-from app.db.session import get_db
-from app.repositories.agent_event import AgentEventRepository
 from app.repositories.commitment import CommitmentRepository
 from app.repositories.expense import ExpenseRepository
 from app.services.commitment import CommitmentService
 from app.services.expense import ExpenseService
 from app.tools.registry import ToolRegistry
+from app.db.session import get_db
+
+
+async def get_expense_service(
+    session: AsyncSession,
+) -> ExpenseService:
+    repository = ExpenseRepository(session)
+    return ExpenseService(repository)
+
+
+async def get_commitment_service(
+    session: AsyncSession,
+) -> CommitmentService:
+    repository = CommitmentRepository(session)
+    return CommitmentService(repository)
 
 
 async def get_tool_registry(
-    db: AsyncSession = Depends(get_db),
+    session: AsyncSession,
 ) -> ToolRegistry:
-
-    expense_repository = ExpenseRepository(
-        db
-    )
-
-    commitment_repository = CommitmentRepository(
-        db
-    )
-
     expense_service = ExpenseService(
-        expense_repository
+        ExpenseRepository(session)
     )
-
     commitment_service = CommitmentService(
-        commitment_repository
+        CommitmentRepository(session)
     )
 
     return ToolRegistry(
@@ -42,13 +51,21 @@ async def get_tool_registry(
     )
 
 
-async def get_agent_event_repository(
-    db: AsyncSession = Depends(get_db),
-) -> AgentEventRepository:
+async def get_family_context_agent(
+    session: AsyncSession,
+) -> FamilyContextAgent:
+    ai_client = AIModelClient()
 
-    return AgentEventRepository(db)
+    tool_registry = ToolRegistry(
+        expense_service=ExpenseService(
+            ExpenseRepository(session)
+        ),
+        commitment_service=CommitmentService(
+            CommitmentRepository(session)
+        ),
+    )
 
-
-def get_ai_client() -> AIModelClient:
-
-    return AIModelClient()
+    return FamilyContextAgent(
+        ai_client=ai_client,
+        tool_registry=tool_registry,
+    )

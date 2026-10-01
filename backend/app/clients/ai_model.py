@@ -1,8 +1,8 @@
-"""
+﻿"""
 AI model client for the Family Context Agent.
 
 Responsibilities:
-- Call the NVIDIA/Nebius OpenAI-compatible API.
+- Call the Nebius Token Factory OpenAI-compatible API.
 - Send tool definitions to the model.
 - Read normal assistant responses.
 - Read structured tool calls.
@@ -10,7 +10,7 @@ Responsibilities:
 """
 
 import json
-import os
+from app.core.config import Settings
 from dataclasses import dataclass
 from typing import Any
 
@@ -19,8 +19,6 @@ import httpx
 
 @dataclass
 class ToolCallRequest:
-    """A tool requested by the AI model."""
-
     name: str
     arguments: dict[str, Any]
     call_id: str
@@ -28,31 +26,20 @@ class ToolCallRequest:
 
 @dataclass
 class AIResponse:
-    """Normalized response returned by the model client."""
-
     content: str | None
     tool_calls: list[ToolCallRequest]
 
 
 class AIModelClient:
-
     def __init__(self) -> None:
-        self.api_key = os.getenv("NVIDIA_API_KEY")
+        settings = Settings()
 
-        self.base_url = os.getenv(
-            "NVIDIA_API_URL",
-            "https://integrate.api.nvidia.com/v1",
-        )
-
-        self.model = os.getenv(
-            "NVIDIA_MODEL",
-            "meta/llama-3.1-8b-instruct",
-        )
+        self.api_key = settings.nebius_api_key
+        self.base_url = settings.nebius_base_url
+        self.model = settings.nvidia_model_name
 
         if not self.api_key:
-            raise ValueError(
-                "NVIDIA_API_KEY is not configured."
-            )
+            raise ValueError("NEBIUS_API_KEY is not configured.")
 
     async def chat(
         self,
@@ -61,6 +48,13 @@ class AIModelClient:
         temperature: float = 0.2,
         max_tokens: int = 1000,
     ) -> AIResponse:
+        """
+        Send a chat request to the Nebius Token Factory API.
+
+        Returns:
+            AIResponse containing the assistant's text response
+            and any requested tool calls.
+        """
 
         url = f"{self.base_url.rstrip('/')}/chat/completions"
 
@@ -81,7 +75,6 @@ class AIModelClient:
             payload["tool_choice"] = "auto"
 
         async with httpx.AsyncClient(timeout=60.0) as client:
-
             response = await client.post(
                 url,
                 headers=headers,
@@ -98,14 +91,13 @@ class AIModelClient:
 
         tool_calls: list[ToolCallRequest] = []
 
-        for tool_call in message.get("tool_calls", []):
-
+        # Some OpenAI-compatible providers return
+        # "tool_calls": None when there are no tool calls.
+        # Using "or []" safely handles both None and [].
+        for tool_call in message.get("tool_calls") or []:
             function = tool_call.get("function", {})
 
-            arguments_raw = function.get(
-                "arguments",
-                "{}",
-            )
+            arguments_raw = function.get("arguments", "{}")
 
             try:
                 arguments = json.loads(arguments_raw)

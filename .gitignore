@@ -1,5 +1,6 @@
 .venv/
 venv/
+my_venv/
 __pycache__/
 *.py[cod]
 *.pyo
@@ -11,7 +12,8 @@ htmlcov/
 
 .env
 .env.*
-!.env.example
+!
+.env.example
 
 storage/uploads/*
 !storage/uploads/.gitkeep
@@ -23,6 +25,8 @@ frontend/.vite/
 .idea/
 .vscode/
 .DS_Store
+
+family/
 
 *.log
 *.sqlite3

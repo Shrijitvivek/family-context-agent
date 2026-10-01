@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+﻿from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
@@ -12,6 +12,8 @@ class AgentState:
     conversation_id: UUID | None
 
     user_message: str
+
+    history: list[dict[str, str]] = field(default_factory=list)
 
     assistant_message: str | None = None
 

@@ -1,0 +1,60 @@
+{
+  "id": "nair_family_core",
+  "title": "Nair Family: a busy fortnight",
+  "description": "Bills, Amma's medical tests, school deadlines, and two prerequisite chains. Dates are relative to the day the scenario is loaded.",
+  "family": { "name": "Nair Family", "timezone": "Asia/Kolkata" },
+  "members": [
+    { "key": "anil", "name": "Anil Nair", "relationship_type": "FATHER", "display_role": "Parent" },
+    { "key": "meera", "name": "Meera Nair", "relationship_type": "MOTHER", "display_role": "Parent" },
+    { "key": "kavya", "name": "Kavya", "relationship_type": "DAUGHTER", "display_role": "Student" },
+    { "key": "arjun", "name": "Arjun", "relationship_type": "SON", "display_role": "Student" },
+    { "key": "amma", "name": "Amma (Saraswathi Nair)", "relationship_type": "GRANDMOTHER", "display_role": "Grandparent" }
+  ],
+  "commitments": [
+    {
+      "key": "electricity", "member": null, "commitment_type": "BILL", "category": "ELECTRICITY",
+      "title": "KSEB Electricity Bill", "amount": "3240.00", "due_in_days": 2
+    },
+    {
+      "key": "school_fee", "member": "kavya", "commitment_type": "EDUCATION", "category": "SCHOOL_FEES",
+      "title": "Kavya's term fee", "amount": "18500.00", "due_in_days": -1, "priority": "HIGH"
+    },
+    {
+      "key": "fasting_test", "member": "amma", "commitment_type": "LAB_TEST", "category": "MEDICAL",
+      "title": "Amma's fasting blood sugar test", "due_in_days": 3,
+      "description": "Fasting from 10 pm the night before."
+    },
+    {
+      "key": "cardiology", "member": "amma", "commitment_type": "APPOINTMENT", "category": "MEDICAL",
+      "title": "Amma's cardiology follow-up", "due_in_days": 5, "priority": "HIGH",
+      "description": "Bring the blood sugar report."
+    },
+    {
+      "key": "passport_photos", "member": "arjun", "commitment_type": "TASK", "category": "EDUCATION",
+      "title": "Passport photos for Arjun's exam form", "due_in_days": null
+    },
+    {
+      "key": "exam_form", "member": "arjun", "commitment_type": "DEADLINE", "category": "EDUCATION",
+      "title": "Arjun's board exam registration", "due_in_days": 6
+    },
+    {
+      "key": "water_tank", "member": "anil", "commitment_type": "HOME_TASK", "category": "HOME",
+      "title": "Clean the overhead water tank", "due_in_days": 10, "priority": "LOW"
+    },
+    {
+      "key": "car_insurance", "member": "anil", "commitment_type": "RENEWAL", "category": "INSURANCE",
+      "title": "Car insurance renewal", "amount": "14200.00", "due_in_days": 21
+    }
+  ],
+  "dependencies": [
+    { "source": "fasting_test", "target": "cardiology" },
+    { "source": "passport_photos", "target": "exam_form" }
+  ],
+  "expenses": [
+    { "member": "meera", "amount": "1850.00", "category": "GROCERIES", "merchant": "Lulu Hypermarket", "days_ago": 2 },
+    { "member": "anil", "amount": "2400.00", "category": "FUEL", "merchant": "Indian Oil", "days_ago": 4 },
+    { "member": "amma", "amount": "960.00", "category": "MEDICAL", "merchant": "Aster Pharmacy", "days_ago": 6 },
+    { "member": "meera", "amount": "1200.00", "category": "GROCERIES", "merchant": "Supplyco", "days_ago": 9 },
+    { "member": "kavya", "amount": "650.00", "category": "EDUCATION", "merchant": "DC Books", "days_ago": 12 }
+  ]
+}

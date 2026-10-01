@@ -3,7 +3,7 @@
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError, ScopeViolationError
@@ -39,7 +39,8 @@ class ExpenseRepository:
         await self._session.refresh(expense)
         return expense
 
-    async def summary(self, query: ExpenseSummaryQuery) -> ExpenseSummary:
+    @staticmethod
+    def _filters(query: ExpenseSummaryQuery) -> list[ColumnElement[bool]]:
         conditions = [Expense.family_id == query.family_id]
         if query.member_id is not None:
             conditions.append(Expense.member_id == query.member_id)
@@ -49,6 +50,18 @@ class ExpenseRepository:
             conditions.append(Expense.expense_date >= query.start_date)
         if query.end_date is not None:
             conditions.append(Expense.expense_date <= query.end_date)
+        return conditions
+
+    async def list_expenses(self, query: ExpenseSummaryQuery) -> list[Expense]:
+        statement = (
+            select(Expense)
+            .where(*self._filters(query))
+            .order_by(Expense.expense_date.desc(), Expense.created_at.desc())
+        )
+        return list((await self._session.scalars(statement)).all())
+
+    async def summary(self, query: ExpenseSummaryQuery) -> ExpenseSummary:
+        conditions = self._filters(query)
 
         statement = select(
             func.coalesce(func.sum(Expense.amount), Decimal("0.00")).label("total"),

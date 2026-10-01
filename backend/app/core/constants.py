@@ -45,6 +45,21 @@ class DependencyType(StrEnum):
     MUST_COMPLETE_BEFORE = "MUST_COMPLETE_BEFORE"
 
 
+class DocumentStatus(StrEnum):
+    """Processing lifecycle of an uploaded document."""
+
+    PENDING = "PENDING"
+    NEEDS_CONFIRMATION = "NEEDS_CONFIRMATION"
+    CONFIRMED = "CONFIRMED"
+    UNREADABLE = "UNREADABLE"
+    FAILED = "FAILED"
+
+
+class MessageRole(StrEnum):
+    USER = "user"
+    ASSISTANT = "assistant"
+
+
 class NotificationStatus(StrEnum):
     ACTIVE = "ACTIVE"
     RESOLVED = "RESOLVED"
