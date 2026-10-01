@@ -8,6 +8,9 @@ TODO:
 """Shared FastAPI dependencies."""
 
 from collections.abc import AsyncGenerator
+from typing import Annotated
+
+from fastapi import Depends
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,10 +18,21 @@ from app.agents.orchestrator import FamilyContextAgent
 from app.clients.ai_model import AIModelClient
 from app.repositories.commitment import CommitmentRepository
 from app.repositories.expense import ExpenseRepository
+from app.repositories.family import FamilyRepository
 from app.services.commitment import CommitmentService
 from app.services.expense import ExpenseService
+from app.services.family import FamilyService
 from app.tools.registry import ToolRegistry
 from app.db.session import get_db
+
+
+async def get_family_service(
+    session: AsyncSession = Depends(get_db),
+) -> FamilyService:
+    return FamilyService(FamilyRepository(session))
+
+
+FamilyServiceDep = Annotated[FamilyService, Depends(get_family_service)]
 
 
 async def get_expense_service(

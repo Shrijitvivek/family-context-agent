@@ -12,6 +12,7 @@ TODO:
 from fastapi import FastAPI
 
 from app.api.v1.endpoints.chat import router as chat_router
+from app.api.v1.endpoints.families import router as families_router
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
@@ -32,6 +33,7 @@ app.include_router(
     prefix="/api/v1",
     tags=["Chat"],
 )
+app.include_router(families_router, prefix="/api/v1")
 
 
 @app.get("/health")

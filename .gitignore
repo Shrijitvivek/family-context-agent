@@ -9,11 +9,12 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
-
+family_agent/
 .env
 .env.*
 !
 .env.example
+family_agent_old/
 
 storage/uploads/*
 !storage/uploads/.gitkeep
@@ -33,3 +34,6 @@ family/
 *.db
 family_agent/
 family/
+family_agent/
+family_agent_broken/
+family_agent/
