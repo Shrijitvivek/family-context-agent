@@ -94,7 +94,7 @@ class AIModelClient:
 
         tool_calls: list[ToolCallRequest] = []
 
-        for tool_call in message.get("tool_calls", []):
+        for tool_call in message.get("tool_calls") or []:
             function = tool_call["function"]
 
             arguments = function.get("arguments", "{}")
