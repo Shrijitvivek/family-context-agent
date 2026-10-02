@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import NotFoundError
 from app.models.family import Family
 from app.models.family_member import FamilyMember
+from app.repositories.query import build_filters, require_family_scope
 
 
 class FamilyRepository:
@@ -29,17 +30,16 @@ class FamilyRepository:
     async def list_members(
         self, family_id: UUID, *, include_inactive: bool = False
     ) -> list[FamilyMember]:
-        conditions = [FamilyMember.family_id == family_id]
-        if not include_inactive:
-            conditions.append(FamilyMember.is_active.is_(True))
+        conditions = build_filters(
+            FamilyMember.family_id == family_id,
+            FamilyMember.is_active.is_(True) if not include_inactive else None,
+        )
         statement = select(FamilyMember).where(*conditions).order_by(FamilyMember.name.asc())
         return list((await self._session.scalars(statement)).all())
 
     async def get_member(self, family_id: UUID, member_id: UUID) -> FamilyMember:
         member = await self._session.get(FamilyMember, member_id)
-        if member is None or member.family_id != family_id:
-            raise NotFoundError("Family member", member_id)
-        return member
+        return require_family_scope(member, family_id, "Family member", member_id)
 
     async def add_member(self, member: FamilyMember) -> FamilyMember:
         self._session.add(member)

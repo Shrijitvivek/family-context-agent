@@ -2,8 +2,8 @@
 
 from datetime import date
 from uuid import UUID
-from sqlalchemy import case
-from sqlalchemy import func, select
+
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import ACTIVE_COMMITMENT_STATUSES, CommitmentType
@@ -13,11 +13,12 @@ from app.models.commitment_dependency import CommitmentDependency
 from app.models.document import Document
 from app.models.family import Family
 from app.models.family_member import FamilyMember
+from app.repositories.query import build_filters, require_family_scope
 from app.schemas.commitment import (
     CommitmentDependencyCreate,
     CommitmentUpdate,
-    SearchCommitmentsQuery,
     GetFamilyPrioritiesQuery,
+    SearchCommitmentsQuery,
 )
 
 
@@ -91,22 +92,20 @@ class CommitmentRepository:
 
     async def search(self, query: SearchCommitmentsQuery) -> list[Commitment]:
         """Search commitments based on provided filters."""
-        conditions = [Commitment.family_id == query.family_id]
-
-        if query.member_id is not None:
-            conditions.append(Commitment.member_id == query.member_id)
-        if query.commitment_type is not None:
-            conditions.append(Commitment.commitment_type == query.commitment_type.value)
-        if query.status is not None:
-            conditions.append(Commitment.status == query.status.value)
-        if query.category is not None:
-            conditions.append(Commitment.category == query.category)
-        if query.due_before is not None:
-            conditions.append(Commitment.due_date <= query.due_before)
-        if query.due_after is not None:
-            conditions.append(Commitment.due_date >= query.due_after)
-        if query.title_query is not None:
-            conditions.append(Commitment.title.ilike(f"%{query.title_query}%"))
+        conditions = build_filters(
+            Commitment.family_id == query.family_id,
+            Commitment.member_id == query.member_id if query.member_id is not None else None,
+            Commitment.commitment_type == query.commitment_type.value
+            if query.commitment_type is not None
+            else None,
+            Commitment.status == query.status.value if query.status is not None else None,
+            Commitment.category == query.category if query.category is not None else None,
+            Commitment.due_date <= query.due_before if query.due_before is not None else None,
+            Commitment.due_date >= query.due_after if query.due_after is not None else None,
+            Commitment.title.ilike(f"%{query.title_query}%")
+            if query.title_query is not None
+            else None,
+        )
 
         statement = select(Commitment).where(*conditions).order_by(
             Commitment.due_date.asc().nulls_last(),
@@ -183,9 +182,7 @@ class CommitmentRepository:
 
     async def get(self, family_id: UUID, commitment_id: UUID) -> Commitment:
         commitment = await self._session.get(Commitment, commitment_id)
-        if commitment is None or commitment.family_id != family_id:
-            raise NotFoundError("Commitment", commitment_id)
-        return commitment
+        return require_family_scope(commitment, family_id, "Commitment", commitment_id)
 
     async def dependency_exists(
         self, source_commitment_id: UUID, target_commitment_id: UUID, relationship_type: str
