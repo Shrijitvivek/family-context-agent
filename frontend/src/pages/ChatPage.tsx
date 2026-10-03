@@ -1,23 +1,19 @@
-/**
- * ChatPage
- *
- * Provides the main conversational interface for the Family Context Agent.
- *
- * Responsibilities:
- * - Display the conversation history.
- * - Provide the message composer.
- * - Connect chat UI to the chat state and API.
- * - Display loading and error feedback.
- */
-
 import PageHeader from "../components/ui/PageHeader";
 import Card from "../components/ui/Card";
 import MessageList from "../components/chat/MessageList";
 import ChatComposer from "../components/chat/ChatComposer";
 import { useChat } from "../hooks/useChat";
+import { useFamily } from "../context/FamilyContext";
 
 export default function ChatPage() {
-  const { messages, loading, error, sendChatMessage } = useChat();
+  const { selectedFamilyId } = useFamily();
+
+  const {
+    messages,
+    loading,
+    error,
+    sendChatMessage,
+  } = useChat(selectedFamilyId ?? "");
 
   return (
     <div>
@@ -44,7 +40,7 @@ export default function ChatPage() {
           <div className="mt-3">
             <ChatComposer
               onSend={sendChatMessage}
-              loading={loading}
+              loading={loading || !selectedFamilyId}
             />
           </div>
         </div>

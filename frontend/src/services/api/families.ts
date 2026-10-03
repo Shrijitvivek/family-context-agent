@@ -4,6 +4,8 @@ export interface Family {
   id: string;
   name: string;
   timezone: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export const getFamilies = async (): Promise<Family[]> => {

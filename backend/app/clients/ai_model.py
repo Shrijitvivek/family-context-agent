@@ -6,15 +6,18 @@ Responsibilities:
 - Send tool definitions to the model.
 - Read normal assistant responses.
 - Read structured tool calls.
+- Request structured JSON responses for document extraction.
 - Keep all model communication in one place.
 """
 
 import json
-from app.core.config import Settings
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
+
+from app.core.config import Settings
+from app.core.exceptions import AIModelError
 
 
 @dataclass
@@ -91,30 +94,19 @@ class AIModelClient:
 
         tool_calls: list[ToolCallRequest] = []
 
-        # Some OpenAI-compatible providers return
-        # "tool_calls": None when there are no tool calls.
-        # Using "or []" safely handles both None and [].
         for tool_call in message.get("tool_calls") or []:
-            function = tool_call.get("function", {})
+            function = tool_call["function"]
 
-            arguments_raw = function.get("arguments", "{}")
+            arguments = function.get("arguments", "{}")
 
-            try:
-                arguments = json.loads(arguments_raw)
-            except json.JSONDecodeError as exc:
-                raise ValueError(
-                    f"AI returned invalid tool arguments "
-                    f"for {function.get('name')}"
-                ) from exc
+            if isinstance(arguments, str):
+                arguments = json.loads(arguments)
 
             tool_calls.append(
                 ToolCallRequest(
                     name=function["name"],
                     arguments=arguments,
-                    call_id=tool_call.get(
-                        "id",
-                        function["name"],
-                    ),
+                    call_id=tool_call["id"],
                 )
             )
 
@@ -122,3 +114,59 @@ class AIModelClient:
             content=content,
             tool_calls=tool_calls,
         )
+
+    async def complete_json(
+        self,
+        messages: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Request a structured JSON response from the model."""
+
+        url = f"{self.base_url.rstrip('/')}/chat/completions"
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": 0.0,
+            "max_tokens": 1000,
+            "response_format": {
+                "type": "json_object",
+            },
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    url,
+                    headers=headers,
+                    json=payload,
+                )
+
+                response.raise_for_status()
+
+            data = response.json()
+            content = data["choices"][0]["message"].get("content")
+
+            if not content:
+                raise AIModelError("Model returned empty content.")
+
+            result = json.loads(content)
+
+            if not isinstance(result, dict):
+                raise AIModelError("Model returned invalid JSON.")
+
+            return result
+
+        except AIModelError:
+            raise
+        except (
+            httpx.HTTPError,
+            KeyError,
+            TypeError,
+            json.JSONDecodeError,
+        ) as exc:
+            raise AIModelError(str(exc)) from exc

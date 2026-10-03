@@ -11,48 +11,18 @@
  * - Preserve the conversation ID returned by the backend.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { sendMessage } from "../services/api/chat";
-import { getFamilies } from "../services/api/families";
 import type { ChatMessage } from "../components/chat/MessageList";
 
-export function useChat() {
-  const [familyId, setFamilyId] = useState<string>();
+export function useChat(familyId: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    getFamilies()
-      .then((families) => {
-        if (cancelled) return;
-        if (families.length === 0) {
-          setError("No family is available in this database yet.");
-          return;
-        }
-        setFamilyId(families[0].id);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setError("Unable to load your family. Please try again.");
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const sendChatMessage = async (message: string) => {
     if (!message.trim() || loading) {
-      return;
-    }
-
-    if (!familyId) {
-      setError("Your family is still loading. Please try again shortly.");
       return;
     }
 
