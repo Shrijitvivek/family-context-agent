@@ -113,6 +113,7 @@ async def get_tool_registry(
         commitment_service=CommitmentService(
             CommitmentRepository(session)
         ),
+        priority_service=await get_priority_service(session),
     )
 
 
@@ -128,6 +129,7 @@ async def get_family_context_agent(
             commitment_service=CommitmentService(
                 CommitmentRepository(session)
             ),
+            priority_service=await get_priority_service(session),
         ),
     )
 
