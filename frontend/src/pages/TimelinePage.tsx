@@ -1,4 +1,246 @@
-/**
- * TODO: Show commitments chronologically and group them by month/date.
- * Provide useful filters without duplicating backend priority logic.
- */
+import { useEffect, useMemo, useState } from "react";
+
+import { CalendarDays, UserRound } from "lucide-react";
+
+import { useFamily } from "../context/FamilyContext";
+import type { TimelineResponse } from "../types/api";
+import type { Commitment, CommitmentStatus } from "../types/domain";
+import { getTimeline } from "../services/api/timeline";
+
+const filters: Array<"all" | CommitmentStatus> = [
+  "all",
+  "pending",
+  "completed",
+  "overdue",
+];
+
+const statusStyles: Record<CommitmentStatus, string> = {
+  pending: "bg-amber-50 text-amber-800 ring-amber-200",
+  completed: "bg-emerald-50 text-emerald-800 ring-emerald-200",
+  overdue: "bg-rose-50 text-rose-800 ring-rose-200",
+  cancelled: "bg-slate-100 text-slate-700 ring-slate-200",
+};
+
+const priorityStyles: Record<Commitment["priority"], string> = {
+  low: "bg-slate-100 text-slate-700",
+  medium: "bg-sky-50 text-sky-800",
+  high: "bg-orange-50 text-orange-800",
+  urgent: "bg-rose-50 text-rose-800",
+};
+
+export default function TimelinePage() {
+  const { selectedFamilyId } = useFamily();
+
+  const [timeline, setTimeline] = useState<TimelineResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] =
+    useState<(typeof filters)[number]>("all");
+
+  useEffect(() => {
+    if (!selectedFamilyId) {
+      setTimeline(null);
+      setLoading(false);
+      return;
+    }
+
+    const loadTimeline = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const data = await getTimeline(selectedFamilyId);
+
+        setTimeline(data);
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to load timeline.",
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadTimeline();
+  }, [selectedFamilyId]);
+
+  const timelineItems = timeline?.items ?? [];
+
+  const visibleItems = useMemo(
+    () =>
+      filter === "all"
+        ? timelineItems
+        : timelineItems.filter((item) => item.status === filter),
+    [filter, timelineItems],
+  );
+
+  return (
+    <main className="mx-auto w-full max-w-6xl px-5 py-8 sm:px-8 sm:py-10">
+      <header className="flex flex-col gap-5 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="mb-2 text-sm font-semibold text-teal-700">
+            Family commitments
+          </p>
+
+          <h1 className="text-3xl font-semibold text-slate-950">
+            Timeline
+          </h1>
+
+          <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">
+            Keep the next important things visible.
+          </p>
+        </div>
+
+        <p className="text-sm text-slate-600">
+          <span className="font-semibold text-slate-950">
+            {visibleItems.length}
+          </span>{" "}
+          {visibleItems.length === 1
+            ? "commitment"
+            : "commitments"}
+        </p>
+      </header>
+
+      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm font-medium text-slate-700">
+          Filter by status
+        </p>
+
+        <div
+          className="inline-flex w-fit max-w-full flex-wrap gap-1 rounded-md border border-slate-200 bg-white p-1"
+          role="group"
+          aria-label="Filter commitments by status"
+        >
+          {filters.map((option) => {
+            const count =
+              option === "all"
+                ? timelineItems.length
+                : timelineItems.filter(
+                    (item) => item.status === option,
+                  ).length;
+
+            const selected = filter === option;
+
+            return (
+              <button
+                aria-pressed={selected}
+                className={`rounded px-3 py-2 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 ${
+                  selected
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                }`}
+                key={option}
+                onClick={() => setFilter(option)}
+                type="button"
+              >
+                {option[0].toUpperCase() + option.slice(1)}{" "}
+                <span
+                  className={
+                    selected
+                      ? "text-slate-300"
+                      : "text-slate-400"
+                  }
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {error && (
+        <p
+          role="alert"
+          className="mt-6 rounded-md border border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700"
+        >
+          {error}
+        </p>
+      )}
+
+      {loading ? (
+        <p className="mt-6 text-sm text-slate-500">
+          Loading timeline...
+        </p>
+      ) : visibleItems.length === 0 ? (
+        <p className="mt-6 rounded-md border border-dashed border-slate-300 px-5 py-10 text-center text-sm text-slate-600">
+          No commitments match this filter.
+        </p>
+      ) : (
+        <section
+          aria-label="Commitments"
+          className="mt-5 divide-y divide-slate-200 border-y border-slate-200"
+        >
+          {visibleItems.map((item) => (
+            <article
+              className="grid gap-4 px-1 py-5 transition-colors hover:bg-slate-50 sm:grid-cols-[minmax(0,1fr)_9rem_9rem] sm:items-center sm:px-4"
+              key={item.id}
+            >
+              <div className="min-w-0">
+                <h2 className="break-words text-base font-semibold text-slate-950">
+                  {item.title}
+                </h2>
+
+                {item.description && (
+                  <p className="mt-1 text-sm leading-5 text-slate-600">
+                    {item.description}
+                  </p>
+                )}
+
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs font-medium text-slate-500">
+                  {item.familyMember && (
+                    <span className="inline-flex items-center gap-1.5">
+                      <UserRound
+                        aria-hidden="true"
+                        size={14}
+                      />
+                      {item.familyMember}
+                    </span>
+                  )}
+
+                  <span className="inline-flex items-center gap-1.5">
+                    <CalendarDays
+                      aria-hidden="true"
+                      size={14}
+                    />
+
+                    Due{" "}
+                    {new Date(item.dueDate).toLocaleDateString(
+                      "en-IN",
+                      {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      },
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              <span
+                className={`w-fit rounded px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${
+                  statusStyles[item.status]
+                }`}
+              >
+                {item.status[0].toUpperCase() +
+                  item.status.slice(1)}
+              </span>
+
+              <span
+                className={`w-fit rounded px-2.5 py-1 text-xs font-semibold ${
+                  priorityStyles[item.priority]
+                }`}
+              >
+                {item.priority[0].toUpperCase() +
+                  item.priority.slice(1)}{" "}
+                priority
+              </span>
+            </article>
+          ))}
+        </section>
+      )}
+    </main>
+  );
+}

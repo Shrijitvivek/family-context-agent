@@ -63,6 +63,16 @@ class DependencyCycleError(ConflictError):
     def __init__(self) -> None:
         super().__init__("This dependency would create a cycle.")
 
+# define a new error class for when a dependency is blocked
+class DependencyBlockedError(ConflictError):
+    code = "dependency_blocked"
+
+    def __init__(self, title: str) -> None:
+        super().__init__(
+            f"Cannot complete '{title}' because a required dependency "
+            "has not been completed."
+        )
+
 
 class InvalidStatusTransitionError(ConflictError):
     code = "invalid_status_transition"
@@ -83,3 +93,23 @@ class PersistenceError(FamilyContextError):
 
 class ToolInputValidationError(FamilyContextError):
     code = "invalid_tool_input"
+
+
+class InvalidUploadError(FamilyContextError):
+    code = "invalid_upload"
+
+
+class DocumentStateError(ConflictError):
+    code = "invalid_document_state"
+
+    def __init__(self, current_status: str | None, action: str) -> None:
+        super().__init__(
+            f"Cannot {action} a document whose status is {current_status}.",
+            details={"current_status": current_status},
+        )
+
+
+class AIModelError(FamilyContextError):
+    """The model provider is unconfigured, unreachable, or returned unusable output."""
+
+    code = "ai_model_unavailable"

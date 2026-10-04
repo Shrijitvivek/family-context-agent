@@ -1,4 +1,46 @@
-/*
- * TODO: Add Tailwind directives and the small set of global design tokens.
- * Build a calm, responsive, accessible visual system for laptop and mobile.
+/**
+ * Global Styles
+ *
+ * Provides the global Tailwind CSS setup and base styles for the
+ * Family Context application.
+ *
+ * Responsibilities:
+ * - Load Tailwind's base, component and utility styles.
+ * - Set the application's default typography and background.
+ * - Provide a consistent global box-sizing and page appearance.
  */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    font-family:
+      Inter,
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: #f8fafc;
+    color: #0f172a;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+}

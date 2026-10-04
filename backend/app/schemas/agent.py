@@ -1,4 +1,6 @@
-"""Structured schemas used by the Family Context Agent."""
+"""
+Schemas used by the Family Context Agent and Chat API.
+"""
 
 from typing import Any, Literal
 from uuid import UUID
@@ -6,15 +8,28 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
-class ToolCall(BaseModel):
-    """A validated request from the model to call one registered tool."""
+class ChatRequest(BaseModel):
+    """Request sent by the Family Context Agent."""
 
-    tool_name: str
+    family_id: UUID
+    user_id: UUID | None = None
+    conversation_id: UUID | None = None
+
+    message: str = Field(
+        min_length=1,
+        description="Message sent by the family member.",
+    )
+
+
+class ToolCall(BaseModel):
+    """A tool requested by the AI agent."""
+
+    name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
 
 
 class Clarification(BaseModel):
-    """A question the agent must ask before taking an action."""
+    """A question the agent asks when required information is missing."""
 
     question: str = Field(min_length=1, max_length=500)
     missing_fields: list[str] = Field(default_factory=list)
@@ -22,7 +37,7 @@ class Clarification(BaseModel):
 
 
 class AgentDecision(BaseModel):
-    """The model's high-level decision."""
+    """Decision made by the agent before executing a tool."""
 
     action: Literal["tool_call", "clarification", "response"]
 
@@ -31,11 +46,15 @@ class AgentDecision(BaseModel):
     response: str | None = None
 
     @classmethod
-    def tool(cls, name: str, arguments: dict[str, Any]) -> "AgentDecision":
+    def tool(
+        cls,
+        name: str,
+        arguments: dict[str, Any],
+    ) -> "AgentDecision":
         return cls(
             action="tool_call",
             tool_call=ToolCall(
-                tool_name=name,
+                name=name,
                 arguments=arguments,
             ),
         )
@@ -65,19 +84,24 @@ class AgentDecision(BaseModel):
 
 
 class AgentContext(BaseModel):
-    """Information available to the agent for the current turn."""
+    """Context available to the Family Context Agent."""
 
     family_id: UUID
-    member_id: UUID | None = None
+    user_id: UUID | None = None
+    conversation_id: UUID | None = None
+    message: str = ""
+    history: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ChatResponse(BaseModel):
+    """Response returned by the Chat API."""
+
+    message: str | None = None
+
     conversation_id: UUID | None = None
 
-    # Information extracted from the current/previous conversation.
-    extracted: dict[str, Any] = Field(default_factory=dict)
+    tool_calls: list[ToolCall] = Field(default_factory=list)
 
+    requires_clarification: bool = False
 
-class AgentTurnResult(BaseModel):
-    """Safe result returned by the orchestrator."""
-
-    decision: AgentDecision
-    tool_result: dict[str, Any] | None = None
-
+    metadata: dict[str, Any] = Field(default_factory=dict)
