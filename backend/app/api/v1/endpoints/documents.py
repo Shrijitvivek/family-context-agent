@@ -32,9 +32,16 @@ async def upload_document(
         member_id=member_id,
         file_name=file.filename or "",
         content_type=file.content_type,
-        content=content,
+        content=content,    
     )
     return await service.process(family_id, document.id, today)
+
+@router.get("", response_model=list[DocumentRead])
+async def list_documents(
+    family_id: UUID,
+    service: DocumentServiceDep,
+):
+    return await service.list_by_family(family_id)
 
 
 @router.get("/{document_id}", response_model=DocumentRead)
