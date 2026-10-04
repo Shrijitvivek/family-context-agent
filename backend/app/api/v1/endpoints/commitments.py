@@ -22,11 +22,12 @@ from app.schemas.commitment import (
 router = APIRouter(prefix="/commitments", tags=["commitments"])
 
 
+# Commitments are created by a family member.
 @router.post("", response_model=CommitmentRead, status_code=status.HTTP_201_CREATED)
 async def create_commitment(payload: CommitmentCreate, service: CommitmentServiceDep):
     return await service.create(payload)
 
-
+# Commitments are listed by a family member.
 @router.get("", response_model=list[CommitmentRead])
 async def list_commitments(
     query: Annotated[SearchCommitmentsQuery, Query()], service: CommitmentServiceDep
@@ -34,6 +35,7 @@ async def list_commitments(
     return await service.search(query)
 
 
+# Dependencies are created by a family member.
 @router.post(
     "/dependencies",
     response_model=CommitmentDependencyRead,
@@ -45,6 +47,7 @@ async def create_dependency(
     return await service.create(payload)
 
 
+# Commitments are retrieved by a family member.
 @router.get("/{commitment_id}", response_model=CommitmentRead)
 async def get_commitment(
     commitment_id: UUID, family_id: UUID, service: CommitmentServiceDep
@@ -52,6 +55,7 @@ async def get_commitment(
     return await service.get(family_id, commitment_id)
 
 
+# Commitments are updated by a family member.
 @router.patch("/{commitment_id}", response_model=CommitmentRead)
 async def update_commitment(
     commitment_id: UUID, payload: CommitmentUpdateRequest, service: CommitmentServiceDep

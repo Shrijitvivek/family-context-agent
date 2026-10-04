@@ -16,7 +16,7 @@ def _normalise_code(value: str) -> str:
         raise ValueError("category cannot be blank")
     return normalised
 
-
+    
 class CommitmentCreate(BaseModel):
     """A safe, create-only commitment payload.
 

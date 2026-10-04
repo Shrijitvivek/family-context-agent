@@ -107,6 +107,12 @@ class DocumentService:
     async def get(self, family_id: UUID, document_id: UUID) -> Document:
         return await self._documents.get(family_id, document_id)
 
+    async def list_by_family(
+        self,
+        family_id: UUID,
+    ) -> list[Document]:
+        return await self._documents.list_by_family(family_id)
+
     async def upload(
         self,
         *,
