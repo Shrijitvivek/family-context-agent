@@ -2,6 +2,7 @@
 
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
@@ -17,6 +18,17 @@ class DocumentRepository:
         if document is None or document.family_id != family_id:
             raise NotFoundError("Document", document_id)
         return document
+
+    async def list_by_family(
+        self,
+        family_id: UUID,
+    ) -> list[Document]:
+        result = await self._session.execute(
+            select(Document)
+            .where(Document.family_id == family_id)
+            .order_by(Document.created_at.desc())
+        )
+        return list(result.scalars().all())
 
     async def add(self, document: Document) -> Document:
         self._session.add(document)

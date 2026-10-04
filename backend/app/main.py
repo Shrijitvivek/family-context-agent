@@ -1,23 +1,37 @@
-
-"""FastAPI application entry point.
-
-TODO:
-- Create the FastAPI application and configure metadata.
-- Register the versioned API router and CORS middleware.
-- Start and stop database and scheduler resources in lifespan hooks.
-- Add clean exception handlers without placing business logic here.
-"""
 """FastAPI application entry point."""
 
-from fastapi import FastAPI
-
-from app.api.v1.endpoints.chat import router as chat_router
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from app.api.v1.router import api_router
+from app.core.exceptions import FamilyContextError
 
 app = FastAPI(
     title="Family Context Agent",
     version="1.0.0",
 )
+
+
+# Exception handlers for the Family Context Agent API.
+@app.exception_handler(FamilyContextError)
+async def family_context_error_handler(
+    request: Request,
+    exc: FamilyContextError,
+) -> JSONResponse:
+    status_code = 409 if exc.code.startswith(
+        ("conflict", "duplicate", "dependency_")
+    ) else 400
+
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "code": exc.code,
+            "message": str(exc),
+            "details": exc.details,
+        },
+    )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,9 +42,8 @@ app.add_middleware(
 )
 
 app.include_router(
-    chat_router,
+    api_router,
     prefix="/api/v1",
-    tags=["Chat"],
 )
 
 
