@@ -80,3 +80,4 @@ class AgentTurnResult(BaseModel):
 
     decision: AgentDecision
     tool_result: dict[str, Any] | None = None
+
