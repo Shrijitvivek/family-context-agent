@@ -27,6 +27,7 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
 }
 
 
+# Human-friendly questions for missing fields.
 FIELD_QUESTIONS: dict[str, str] = {
     "amount": "What was the amount of the expense?",
     "category": "What was the expense for?",
@@ -39,7 +40,9 @@ FIELD_QUESTIONS: dict[str, str] = {
     "commitment_id": "Which commitment would you like to update?",
     "source_commitment_id": "Which commitment must be completed first?",
     "target_commitment_id": "Which commitment depends on it?",
-    "relationship_type": "What is the relationship between the two commitments?",
+    "relationship_type": (
+        "What is the relationship between the two commitments?"
+    ),
 }
 
 
@@ -74,6 +77,7 @@ def build_clarification(
 
     missing = find_missing_fields(tool_name, arguments)
 
+    # All required information is available.
     if not missing:
         return None
 

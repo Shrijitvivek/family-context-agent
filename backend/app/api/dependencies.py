@@ -112,8 +112,12 @@ async def get_tool_registry(
         ),
         commitment_service=CommitmentService(
             CommitmentRepository(session)
-        ),
-    )
+        ), priority_service=PriorityService(
+            commitments=CommitmentRepository(session),
+            notifications=NotificationService(
+                NotificationRepository(session)
+            ),
+        ),)
 
 
 async def get_family_context_agent(
@@ -127,7 +131,12 @@ async def get_family_context_agent(
             ),
             commitment_service=CommitmentService(
                 CommitmentRepository(session)
-            ),
+            ),priority_service=PriorityService(
+                commitments=CommitmentRepository(session),
+                notifications=NotificationService(
+                    NotificationRepository(session)
+                ),
+            )
         ),
     )
 
