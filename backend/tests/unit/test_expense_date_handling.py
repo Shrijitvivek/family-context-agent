@@ -202,6 +202,62 @@ async def test_confirmation_uses_original_expense_request_date(monkeypatch) -> N
 
 
 @pytest.mark.asyncio
+async def test_missing_date_defaults_to_family_today(monkeypatch) -> None:
+    registry, result = await _run_agent(
+        "add 1000 entertainment expense",
+        [{"role": "user", "content": "add 1000 entertainment expense"}],
+        monkeypatch,
+    )
+
+    assert registry.dispatched[0][1]["expense_date"] == "2026-10-06"
+    assert result.tool_calls[0]["arguments"]["expense_date"] == "2026-10-06"
+
+
+@pytest.mark.asyncio
+async def test_followup_date_correction_replaces_pending_date(monkeypatch) -> None:
+    registry, result = await _run_agent(
+        "Actually, make that tomorrow",
+        [
+            {"role": "user", "content": "add 1000 entertainment expense yesterday"},
+            {"role": "assistant", "content": "What was the amount?"},
+            {"role": "user", "content": "1000"},
+            {"role": "assistant", "content": "Actually, which date?"},
+            {"role": "user", "content": "Actually, make that tomorrow"},
+        ],
+        monkeypatch,
+    )
+
+    assert registry.dispatched[0][1]["expense_date"] == "2026-10-07"
+    assert result.tool_calls[0]["arguments"]["expense_date"] == "2026-10-07"
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_dates_prompt_for_clarification_without_dispatch(monkeypatch) -> None:
+    from app.agents import orchestrator as orchestrator_module
+
+    monkeypatch.setattr(
+        orchestrator_module,
+        "get_settings",
+        lambda: SimpleNamespace(family_timezone="Asia/Kolkata"),
+    )
+    registry = FakeRegistry()
+    agent = FamilyContextAgent(FakeAIClient("2026-10-06"), registry)
+    state = AgentState(
+        family_id=uuid4(),
+        user_id=None,
+        conversation_id=uuid4(),
+        user_message="Add 1000 groceries yesterday, actually tomorrow",
+        history=[],
+    )
+
+    result = await agent.run(state)
+
+    assert not registry.dispatched
+    assert result.requires_clarification is True
+    assert result.assistant_message == "Which date should I use for this expense?"
+
+
+@pytest.mark.asyncio
 async def test_date_survives_multiple_clarification_turns(monkeypatch) -> None:
     registry, result = await _run_agent(
         "yes",

@@ -10,7 +10,6 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "add_expense": (
         "amount",
         "category",
-        "expense_date",
     ),
     "create_commitment": (
         "commitment_type",
@@ -31,7 +30,6 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
 FIELD_QUESTIONS: dict[str, str] = {
     "amount": "What was the amount of the expense?",
     "category": "What was the expense for?",
-    "expense_date": "What date was the expense made?",
     "commitment_type": (
         "What type of commitment is this "
         "(for example, bill, appointment, task, or deadline)?"
