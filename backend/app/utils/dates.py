@@ -74,20 +74,6 @@ def today_in(timezone: str) -> date:
     return datetime.now(ZoneInfo(timezone)).date()
 
 
-def has_expense_date_intent(user_message: str) -> bool:
-    """Whether a message contains a supported or recognizable date expression."""
-
-    return bool(
-        _RELATIVE_BASE_RE.search(user_message)
-        or _RELATIVE_AMOUNT_RE.search(user_message)
-        or _COMPOUND_RELATIVE_RE.search(user_message)
-        or _RELATIVE_WORD_RE.search(user_message)
-        or _EXPLICIT_DATE_RE.search(user_message)
-        or _MALFORMED_NUMERIC_DATE_RE.search(user_message)
-        or _UNSUPPORTED_RELATIVE_RE.search(user_message)
-    )
-
-
 def _parse_count(value: str) -> int:
     count = _NUMBER_WORDS.get(value.casefold())
     if count is None:
