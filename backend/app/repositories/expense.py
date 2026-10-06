@@ -10,6 +10,7 @@ from app.core.exceptions import NotFoundError, ScopeViolationError
 from app.models.expense import Expense
 from app.models.family import Family
 from app.models.family_member import FamilyMember
+from app.repositories.query import build_filters
 from app.schemas.expense import ExpenseSummary, ExpenseSummaryQuery
 
 
@@ -41,16 +42,13 @@ class ExpenseRepository:
 
     @staticmethod
     def _filters(query: ExpenseSummaryQuery) -> list[ColumnElement[bool]]:
-        conditions = [Expense.family_id == query.family_id]
-        if query.member_id is not None:
-            conditions.append(Expense.member_id == query.member_id)
-        if query.category is not None:
-            conditions.append(Expense.category == query.category)
-        if query.start_date is not None:
-            conditions.append(Expense.expense_date >= query.start_date)
-        if query.end_date is not None:
-            conditions.append(Expense.expense_date <= query.end_date)
-        return conditions
+        return build_filters(
+            Expense.family_id == query.family_id,
+            Expense.member_id == query.member_id if query.member_id is not None else None,
+            Expense.category == query.category if query.category is not None else None,
+            Expense.expense_date >= query.start_date if query.start_date is not None else None,
+            Expense.expense_date <= query.end_date if query.end_date is not None else None,
+        )
 
     async def list_expenses(self, query: ExpenseSummaryQuery) -> list[Expense]:
         statement = (

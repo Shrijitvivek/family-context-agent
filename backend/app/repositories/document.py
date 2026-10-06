@@ -5,8 +5,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import NotFoundError
 from app.models.document import Document
+from app.repositories.query import require_family_scope
 
 
 class DocumentRepository:
@@ -15,9 +15,7 @@ class DocumentRepository:
 
     async def get(self, family_id: UUID, document_id: UUID) -> Document:
         document = await self._session.get(Document, document_id)
-        if document is None or document.family_id != family_id:
-            raise NotFoundError("Document", document_id)
-        return document
+        return require_family_scope(document, family_id, "Document", document_id)
 
     async def list_by_family(
         self,

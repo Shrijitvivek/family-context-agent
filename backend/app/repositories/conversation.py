@@ -5,9 +5,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import NotFoundError
 from app.models.conversation import Conversation
 from app.models.message import Message
+from app.repositories.query import require_family_scope
 
 
 class ConversationRepository:
@@ -16,9 +16,7 @@ class ConversationRepository:
 
     async def get(self, family_id: UUID, conversation_id: UUID) -> Conversation:
         conversation = await self._session.get(Conversation, conversation_id)
-        if conversation is None or conversation.family_id != family_id:
-            raise NotFoundError("Conversation", conversation_id)
-        return conversation
+        return require_family_scope(conversation, family_id, "Conversation", conversation_id)
 
     async def create(self, family_id: UUID) -> Conversation:
         conversation = Conversation(family_id=family_id)
