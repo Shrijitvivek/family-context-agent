@@ -6,7 +6,7 @@ from app.agents.state import AgentState
 from app.clients.ai_model import AIModelClient
 from app.core.config import get_settings
 from app.tools.registry import ToolRegistry
-from app.utils.dates import resolve_expense_date
+from app.utils.dates import has_expense_date_intent, resolve_expense_date
 
 
 _CONFIRMATION_REPLIES = {
@@ -34,6 +34,11 @@ def _expense_date_source(state: AgentState) -> str:
         and history[-1].get("content", "").strip() == state.user_message.strip()
     ):
         history.pop()
+
+    # A date stated in the current turn is the user's latest intent. This lets
+    # corrections such as "actually, use tomorrow" replace a pending date.
+    if has_expense_date_intent(state.user_message):
+        return state.user_message
 
     last_assistant = next(
         (item for item in reversed(history) if item.get("role") == "assistant"),
@@ -147,10 +152,15 @@ class FamilyContextAgent:
 
                 try:
                     if tool_call.name == "add_expense":
-                        resolved_date = resolve_expense_date(
-                            _expense_date_source(state),
-                            get_settings().family_timezone,
-                        )
+                        try:
+                            resolved_date = resolve_expense_date(
+                                _expense_date_source(state),
+                                get_settings().family_timezone,
+                            )
+                        except ValueError:
+                            state.assistant_message = "Which date should I use for this expense?"
+                            state.requires_clarification = True
+                            return state
                         # Tool arguments are model-proposed; the original user
                         # message and application timezone determine the date.
                         arguments["expense_date"] = resolved_date.isoformat()
