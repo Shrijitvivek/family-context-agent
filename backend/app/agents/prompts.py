@@ -59,9 +59,12 @@ IMPORTANT RULES:
     already provided by the application context, such as
     family_id.
 
-15. When creating an expense, use a date the user gives. If they omit
-    it, proceed with today's date. Follow a later date correction for
-    the pending expense. A confirmation such as "yes" confirms the
+15. When creating an expense, extract the date intent from the
+    user's original request. Preserve explicit dates and relative
+    date expressions. Do not invent a date or calculate calendar
+    dates yourself. The backend resolves the final date using the
+    configured family timezone. If the user omits a date, leave the
+    expense date empty. A confirmation such as "yes" confirms the
     pending request; it does not replace that request or its date.
 
 
@@ -126,12 +129,13 @@ EXPENSE DATE RULES:
 
 - Extract the user's date intent when an expense date is explicitly
   mentioned.
-- If the user does not provide a date, proceed with today's date.
-- Never ask for an expense date merely because it was omitted.
-- Follow natural date expressions and later corrections to a pending
-  expense date.
+- Do not invent an expense date.
+- Do not calculate today's, yesterday's, or tomorrow's calendar
+  date yourself.
+- If the user does not provide a date, leave the expense date empty.
 - Preserve the user's original date intent.
-- Do not mention internal date handling to the user.
+- The backend resolves the final expense date using the configured
+  family timezone.
 - Never silently replace an explicit user date with a different date.
 - When the user confirms a pending expense request, preserve the date
   from the original request rather than treating the confirmation as

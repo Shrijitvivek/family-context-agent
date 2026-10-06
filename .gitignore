@@ -9,7 +9,7 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
-family_agent_broken/
+
 .env
 .env.*
 !

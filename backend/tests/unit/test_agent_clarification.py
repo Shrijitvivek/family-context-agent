@@ -11,7 +11,7 @@ from app.schemas.agent import AgentContext
 from app.tools.registry import ToolRegistry
 
 
-def test_expense_requires_amount_and_category_but_defaults_date() -> None:
+def test_expense_requires_amount_category_and_date() -> None:
     missing = find_missing_fields(
         "add_expense",
         {
@@ -19,7 +19,10 @@ def test_expense_requires_amount_and_category_but_defaults_date() -> None:
         },
     )
 
-    assert missing == ["category"]
+    assert missing == [
+        "category",
+        "expense_date",
+    ]
 
 
 def test_complete_expense_does_not_need_clarification() -> None:
