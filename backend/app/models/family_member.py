@@ -11,6 +11,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.commitment import Commitment
+    from app.models.document import Document
     from app.models.expense import Expense
     from app.models.family import Family
 
@@ -18,7 +19,6 @@ if TYPE_CHECKING:
 class FamilyMember(Base):
     __tablename__ = "family_members"
     __table_args__ = (
-        Index("ix_family_members_family_id", "family_id"),
         Index("ix_family_members_name", "name"),
         Index("ix_family_members_active", "family_id", "is_active"),
         Index("ix_family_members_family_name", "family_id", "name"),
@@ -45,3 +45,7 @@ class FamilyMember(Base):
     family: Mapped["Family"] = relationship(back_populates="members")
     expenses: Mapped[list["Expense"]] = relationship(back_populates="member")
     commitments: Mapped[list["Commitment"]] = relationship(back_populates="member")
+    uploaded_documents: Mapped[list["Document"]] = relationship(
+        back_populates="uploaded_by_member",
+        foreign_keys="Document.uploaded_by_member_id",
+    )

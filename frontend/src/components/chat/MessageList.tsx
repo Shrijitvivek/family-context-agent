@@ -7,8 +7,12 @@
  * - Display user and assistant messages.
  * - Visually distinguish between message types.
  * - Keep the conversation easy to read.
+ * - Render assistant Markdown, including GitHub-style tables.
  * - Show an empty state when no messages exist.
  */
+
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 export interface ChatMessage {
   id: string;
@@ -50,16 +54,63 @@ export default function MessageList({ messages }: MessageListProps) {
         return (
           <div
             key={message.id}
-            className={`flex ${isUser ? "justify-end" : "justify-start"}`}
+            className={`flex min-w-0 ${isUser ? "justify-end" : "justify-start"}`}
           >
             <div
-              className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed sm:max-w-[75%] ${
+              className={`min-w-0 max-w-[85%] break-words rounded-2xl px-4 py-3 text-sm leading-relaxed sm:max-w-[75%] ${
                 isUser
                   ? "rounded-br-md bg-slate-900 text-white"
                   : "rounded-bl-md border border-slate-200 bg-white text-slate-800"
               }`}
             >
-              {message.content}
+              {isUser ? (
+                <p className="whitespace-pre-wrap">{message.content}</p>
+              ) : (
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+                    h1: ({ children }) => (
+                      <h1 className="mb-2 text-lg font-semibold">{children}</h1>
+                    ),
+                    h2: ({ children }) => (
+                      <h2 className="mb-2 text-base font-semibold">{children}</h2>
+                    ),
+                    h3: ({ children }) => (
+                      <h3 className="mb-2 font-semibold">{children}</h3>
+                    ),
+                    ul: ({ children }) => (
+                      <ul className="mb-3 list-disc space-y-1 pl-5 last:mb-0">
+                        {children}
+                      </ul>
+                    ),
+                    ol: ({ children }) => (
+                      <ol className="mb-3 list-decimal space-y-1 pl-5 last:mb-0">
+                        {children}
+                      </ol>
+                    ),
+                    table: ({ children }) => (
+                      <div className="mb-3 w-full min-w-0 max-w-full overflow-x-auto last:mb-0">
+                        <table className="w-full border-collapse text-left">
+                          {children}
+                        </table>
+                      </div>
+                    ),
+                    th: ({ children }) => (
+                      <th className="border border-slate-300 bg-slate-50 px-3 py-2 font-semibold">
+                        {children}
+                      </th>
+                    ),
+                    td: ({ children }) => (
+                      <td className="border border-slate-300 px-3 py-2 align-top">
+                        {children}
+                      </td>
+                    ),
+                  }}
+                >
+                  {message.content}
+                </ReactMarkdown>
+              )}
             </div>
           </div>
         );
