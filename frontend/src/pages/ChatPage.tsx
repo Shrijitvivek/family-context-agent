@@ -4,16 +4,17 @@ import MessageList from "../components/chat/MessageList";
 import ChatComposer from "../components/chat/ChatComposer";
 import { useChat } from "../hooks/useChat";
 import { useFamily } from "../context/FamilyContext";
+import type { DocumentResponse } from "../services/api/documents";
+import { useState } from "react";
 
 export default function ChatPage() {
   const { selectedFamilyId } = useFamily();
+  const [attachedDocument, setAttachedDocument] =
+    useState<DocumentResponse | null>(null);
 
-  const {
-    messages,
-    loading,
-    error,
-    sendChatMessage,
-  } = useChat(selectedFamilyId ?? "");
+  const { messages, loading, error, sendChatMessage } = useChat(
+    selectedFamilyId ?? "",
+  );
 
   return (
     <div>
@@ -37,9 +38,13 @@ export default function ChatPage() {
             </div>
           )}
 
-          <div className="mt-3">
+          <div className="mt-3"> 
             <ChatComposer
-              onSend={sendChatMessage}
+              onSend={(message) =>
+                sendChatMessage(message, attachedDocument?.id)
+              }
+              familyId={selectedFamilyId ?? ""}
+              onDocumentUpload={setAttachedDocument}
               loading={loading || !selectedFamilyId}
             />
           </div>

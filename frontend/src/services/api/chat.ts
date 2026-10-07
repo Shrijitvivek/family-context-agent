@@ -6,6 +6,7 @@ export interface ChatRequest {
   user_id?: string;
   conversation_id?: string;
   message: string;
+  document_id?: string;
 }
 
 // Response from the Family Context Agent

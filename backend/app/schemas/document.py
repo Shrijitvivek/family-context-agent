@@ -11,19 +11,27 @@ from app.core.constants import CommitmentType, DocumentStatus, Priority
 
 
 class ExtractedFields(BaseModel):
-    """What the model read from a document. Every field is optional and unconfirmed."""
+    """Common fields extracted from a document plus document-specific fields."""
 
     commitment_type: CommitmentType | None = None
     title: str | None = Field(default=None, max_length=200)
     category: str | None = Field(default=None, max_length=50)
     description: str | None = Field(default=None, max_length=2_000)
-    amount: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
+    amount: Decimal | None = Field(
+        default=None,
+        gt=0,
+        max_digits=12,
+        decimal_places=2,
+    )
     start_date: date | None = None
     due_date: date | None = None
     member_name: str | None = Field(default=None, max_length=150)
+
+    # Additional information specific to the document.
+    fields: dict[str, Any] = Field(default_factory=dict)
+
     confidence: float | None = Field(default=None, ge=0, le=1)
     missing_fields: list[str] = Field(default_factory=list)
-
 
 class DocumentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)

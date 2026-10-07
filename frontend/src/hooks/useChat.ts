@@ -1,16 +1,3 @@
-/**
- * useChat
- *
- * Manages the state and API interaction for the Family Context chat.
- *
- * Responsibilities:
- * - Store the current conversation messages.
- * - Send user messages to the chat API.
- * - Add assistant responses to the conversation.
- * - Track the loading and error states.
- * - Preserve the conversation ID returned by the backend.
- */
-
 import { useState } from "react";
 import { sendMessage } from "../services/api/chat";
 import type { ChatMessage } from "../components/chat/MessageList";
@@ -21,7 +8,10 @@ export function useChat(familyId: string) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const sendChatMessage = async (message: string) => {
+  const sendChatMessage = async (
+    message: string,
+    documentId?: string,
+  ) => {
     if (!message.trim() || loading) {
       return;
     }
@@ -41,6 +31,7 @@ export function useChat(familyId: string) {
         family_id: familyId,
         conversation_id: conversationId,
         message,
+        document_id: documentId,
       });
 
       setConversationId(response.conversation_id ?? undefined);

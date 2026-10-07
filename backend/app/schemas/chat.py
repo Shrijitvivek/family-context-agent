@@ -1,10 +1,4 @@
-"""Chat and agent interaction schemas.
-
-TODO:
-- Define message requests and assistant responses.
-- Include structured intent, clarification options, confirmations, and safe UI actions.
-"""
-"""Chat request and response schemas."""
+"""Chat and agent interaction schemas."""
 
 from uuid import UUID
 
@@ -15,6 +9,7 @@ class ChatRequest(BaseModel):
     family_id: UUID
     user_id: UUID | None = None
     conversation_id: UUID | None = None
+    document_id: UUID | None = None
     message: str = Field(min_length=1)
 
 

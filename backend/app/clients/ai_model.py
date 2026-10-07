@@ -1,13 +1,6 @@
 ﻿"""
 AI model client for the Family Context Agent.
 
-Responsibilities:
-- Call the Nebius Token Factory OpenAI-compatible API.
-- Send tool definitions to the model.
-- Read normal assistant responses.
-- Read structured tool calls.
-- Request structured JSON responses for document extraction.
-- Keep all model communication in one place.
 """
 
 import json
@@ -40,6 +33,7 @@ class AIModelClient:
         self.api_key = settings.nebius_api_key
         self.base_url = settings.nebius_base_url
         self.model = settings.nvidia_model_name
+        self.vision_model = settings.vision_model_name
 
         if not self.api_key:
             raise ValueError("NEBIUS_API_KEY is not configured.")
@@ -118,6 +112,8 @@ class AIModelClient:
     async def complete_json(
         self,
         messages: list[dict[str, Any]],
+        *,
+        model: str | None = None,
     ) -> dict[str, Any]:
         """Request a structured JSON response from the model."""
 
@@ -129,7 +125,7 @@ class AIModelClient:
         }
 
         payload: dict[str, Any] = {
-            "model": self.model,
+            "model": model or self.model,  # Use the provided model or default to the configured model
             "messages": messages,
             "temperature": 0.0,
             "max_tokens": 1000,

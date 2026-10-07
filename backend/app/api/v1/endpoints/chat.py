@@ -29,6 +29,7 @@ async def chat(
         user_id=request.user_id,
         conversation_id=request.conversation_id,
         message=request.message,
+        document_id=request.document_id
     )
 
     return ChatResponse(

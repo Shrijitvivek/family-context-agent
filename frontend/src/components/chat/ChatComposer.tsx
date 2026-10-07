@@ -7,14 +7,18 @@
 import { useState, useRef } from "react";
 import { Send, Paperclip } from "lucide-react";
 import Button from "../ui/Button";
-
+import {uploadDocument , type DocumentResponse} from "../../services/api/documents"
 interface ChatComposerProps {
   onSend: (message: string) => void;
+  familyId: string; // Optional familyId prop
+  onDocumentUpload?: (document: DocumentResponse) => void; // Optional callback for document upload
   loading?: boolean;
 }
 
 export default function ChatComposer({
   onSend,
+  familyId,
+  onDocumentUpload,
   loading = false,
 }: ChatComposerProps) {
   const [message, setMessage] = useState("");
@@ -32,7 +36,19 @@ export default function ChatComposer({
     }
 
     setSelectedFile(file);
+    void handleFileUpload(file); // Call the file upload function after selecting a file
   };
+
+  
+  const handleFileUpload = async (file: File) => {
+  try {
+    const document = await uploadDocument(familyId,file);
+
+    onDocumentUpload?.(document);
+  } catch (error) {
+    console.error("Document upload failed:", error);
+  }
+};
 
   // Handle file upload
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
