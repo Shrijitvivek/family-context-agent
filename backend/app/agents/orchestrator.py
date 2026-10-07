@@ -177,6 +177,7 @@ class FamilyContextAgent:
                             _expense_date_source(state),
                             get_settings().family_timezone,
                         )
+                        arguments["expense_date"] = resolved_date.isoformat()
                         # Tool arguments are model-proposed; the original user
                         # message and application timezone determine the date.
                         arguments["expense_date"] = resolved_date.isoformat()

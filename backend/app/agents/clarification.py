@@ -10,7 +10,6 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "add_expense": (
         "amount",
         "category",
-        "expense_date",
     ),
     "create_commitment": (
         "commitment_type",
