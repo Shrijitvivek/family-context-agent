@@ -30,10 +30,7 @@ class Expense(Base):
     __tablename__ = "expenses"
     __table_args__ = (
         CheckConstraint("amount > 0", name="ck_expenses_amount_positive"),
-        Index("ix_expenses_family_id", "family_id"),
-        Index("ix_expenses_member_id", "member_id"),
         Index("ix_expenses_expense_date", "expense_date"),
-        Index("ix_expenses_category", "category"),
         Index("ix_expenses_family_date", "family_id", "expense_date"),
         Index("ix_expenses_family_category_date", "family_id", "category", "expense_date"),
     )
