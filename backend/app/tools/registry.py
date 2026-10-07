@@ -66,13 +66,20 @@ class RegisteredTool:
 
     def model_definition(self) -> dict[str, Any]:
         """Return an OpenAI/NVIDIA-compatible function-tool description."""
-
+        parameters = self.input_model.model_json_schema()
+        if self.name == "add_expense":
+            # The chat orchestrator fills in today's family-local date when the
+            # user omits one, while the API payload remains date-required.
+            parameters["required"] = [
+                field for field in parameters.get("required", [])
+                if field != "expense_date"
+            ]
         return {
             "type": "function",
             "function": {
                 "name": self.name,
                 "description": self.description,
-                "parameters": self.input_model.model_json_schema(),
+                "parameters": parameters,
             },
         }
 
