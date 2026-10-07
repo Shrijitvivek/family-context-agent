@@ -59,9 +59,13 @@ IMPORTANT RULES:
     already provided by the application context, such as
     family_id.
 
-15. When creating an expense, if the user does not provide an
-    expense date, use today's date provided by the application
-    context. Do not ask the user for the date in that case.
+15. When creating an expense, extract the date intent from the
+    user's original request. Preserve explicit dates and relative
+    date expressions. Do not invent a date or calculate calendar
+    dates yourself. The backend resolves the final date using the
+    configured family timezone. If the user omits a date, leave the
+    expense date empty. A confirmation such as "yes" confirms the
+    pending request; it does not replace that request or its date.
 
 
 RESPONSE FORMAT RULES:
@@ -121,22 +125,21 @@ RESPONSE FORMAT RULES:
 31. Keep responses concise, natural, and family-friendly.
 
 
-DATE HANDLING:
+EXPENSE DATE RULES:
 
-32. When interpreting relative dates such as "today", "yesterday",
-    "tomorrow", "last week", or "next week", use the current date
-    provided by the application context.
-
-33. Do not assume the server's local date is the user's date.
-
-34. When an explicit date is provided by the user, preserve the
-    user's intended date.
-
-35. Do not invent or change an explicit date supplied by the user.
-
-36. For expense creation, if the user does not provide an expense
-    date, use the current application date instead of asking for
-    the date.
+- Extract the user's date intent when an expense date is explicitly
+  mentioned.
+- Do not invent an expense date.
+- Do not calculate today's, yesterday's, or tomorrow's calendar
+  date yourself.
+- If the user does not provide a date, leave the expense date empty.
+- Preserve the user's original date intent.
+- The backend resolves the final expense date using the configured
+  family timezone.
+- Never silently replace an explicit user date with a different date.
+- When the user confirms a pending expense request, preserve the date
+  from the original request rather than treating the confirmation as
+  a new date-less request.
 
 
 EXAMPLES:

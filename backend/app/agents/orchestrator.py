@@ -1,10 +1,75 @@
 ﻿import json
 from datetime import date
+from typing import Any
 
 from app.agents.prompts import SYSTEM_PROMPT
 from app.agents.state import AgentState
 from app.clients.ai_model import AIModelClient
+from app.core.config import get_settings
 from app.tools.registry import ToolRegistry
+from app.utils.dates import resolve_expense_date
+
+
+_CONFIRMATION_REPLIES = {
+    "yes",
+    "yes please",
+    "yeah",
+    "yep",
+    "correct",
+    "that's right",
+    "that is right",
+    "right",
+    "sure",
+    "ok",
+    "okay",
+}
+
+
+def _expense_date_source(state: AgentState) -> str:
+    """Preserve date intent through a pending expense clarification exchange."""
+
+    history = list(state.history)
+    if (
+        history
+        and history[-1].get("role") == "user"
+        and history[-1].get("content", "").strip() == state.user_message.strip()
+    ):
+        history.pop()
+
+    last_assistant = next(
+        (item for item in reversed(history) if item.get("role") == "assistant"),
+        None,
+    )
+    if last_assistant is None:
+        return state.user_message
+
+    question = last_assistant.get("content", "")
+    normalized_question = question.casefold()
+    clarification_terms = (
+        "expense",
+        "spend",
+        "amount",
+        "date",
+        "category",
+        "merchant",
+        "did you mean",
+        "which one",
+    )
+    if "?" not in question or not any(term in normalized_question for term in clarification_terms):
+        return state.user_message
+
+    user_messages = [state.user_message]
+    for item in reversed(history):
+        role = item.get("role")
+        if role == "assistant":
+            if "?" not in item.get("content", ""):
+                break
+        elif role == "user":
+            content = item.get("content", "")
+            if content.strip().casefold().rstrip(".! ") not in _CONFIRMATION_REPLIES:
+                user_messages.append(content)
+
+    return "\n".join(reversed(user_messages))
 
 
 class FamilyContextAgent:
@@ -106,22 +171,16 @@ class FamilyContextAgent:
                 # The user does not need to provide it.
                 arguments["family_id"] = str(state.family_id)
 
-                # If the user did not provide an expense date,
-                # use today's date.
-                if (
-                    tool_call.name == "add_expense"
-                    and not arguments.get("expense_date")
-                ):
-                    arguments["expense_date"] = date.today().isoformat()
-
-                state.tool_calls.append(
-                    {
-                        "name": tool_call.name,
-                        "arguments": arguments,
-                    }
-                )
-
                 try:
+                    if tool_call.name == "add_expense":
+                        resolved_date = resolve_expense_date(
+                            _expense_date_source(state),
+                            get_settings().family_timezone,
+                        )
+                        # Tool arguments are model-proposed; the original user
+                        # message and application timezone determine the date.
+                        arguments["expense_date"] = resolved_date.isoformat()
+
                     result = await self.tool_registry.dispatch(
                         tool_call.name,
                         arguments,
@@ -131,6 +190,13 @@ class FamilyContextAgent:
                         "success": False,
                         "error": str(exc),
                     }
+
+                state.tool_calls.append(
+                    {
+                        "name": tool_call.name,
+                        "arguments": arguments,
+                    }
+                )
 
                 state.tool_results.append(
                     {
