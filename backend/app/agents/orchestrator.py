@@ -82,10 +82,33 @@ class FamilyContextAgent:
         self.tool_registry = tool_registry
 
     async def run(self, state: AgentState) -> AgentState:
+        context_section = ""
+
+        if state.household_context:
+            context_section = f"""
+
+        CURRENT HOUSEHOLD CONTEXT
+        =========================
+
+        The following information comes from the application's
+        database and represents the current household state.
+
+        {state.household_context}
+
+        Use this information when answering questions about
+        the family.
+
+        Do not invent household information that is not present
+        in this context or available through tools.
+
+        If the context is insufficient, use the appropriate tool
+        or ask the user for clarification.
+        """
+
         messages = [
             {
                 "role": "system",
-                "content": SYSTEM_PROMPT,
+                "content": SYSTEM_PROMPT + context_section,
             },
         ]
 

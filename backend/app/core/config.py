@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     allowed_upload_types: str = "application/pdf,image/jpeg,image/png"
 
     scheduler_enabled: bool = True
-    deadline_check_interval_minutes: int = 15
+    deadline_check_interval_minutes: int = 60
 
     @property
     def cors_origin_list(self) -> list[str]:

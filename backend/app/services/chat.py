@@ -9,6 +9,8 @@ from app.agents.state import AgentState
 from app.clients.ai_model import AIModelClient
 from app.repositories.agent_event import AgentEventRepository
 from app.repositories.commitment import CommitmentRepository
+from app.repositories.family import FamilyRepository
+from app.services.context import ContextService
 from app.repositories.conversation import ConversationRepository
 from app.repositories.document import DocumentRepository
 from app.repositories.expense import ExpenseRepository
@@ -32,9 +34,14 @@ class ChatService:
         expense_repository = ExpenseRepository(session)
         commitment_repository = CommitmentRepository(session)
         notification_repository = NotificationRepository(session)
+        family_repository = FamilyRepository(session)
 
         expense_service = ExpenseService(expense_repository)
         commitment_service = CommitmentService(commitment_repository)
+        context_service = ContextService(
+            families=family_repository,
+            commitments=commitment_repository,
+        )
         notification_service = NotificationService(notification_repository)
 
         priority_service = PriorityService(
@@ -46,6 +53,11 @@ class ChatService:
             expense_service=expense_service,
             commitment_service=commitment_service,
             priority_service=priority_service,
+        )
+
+        self._context_service = ContextService(
+            families=family_repository,
+            commitments=commitment_repository,
         )
 
         self._agent = FamilyContextAgent(
@@ -96,6 +108,11 @@ class ChatService:
             conversation_id=conversation_id,
             role="user",
             content=message,
+        )
+        
+        household_context = await self._context_service.build(
+            family_id=family_id,
+            member_id=user_id,
         )
 
         state = AgentState(
