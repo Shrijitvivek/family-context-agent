@@ -1,4 +1,5 @@
 ﻿import json
+from datetime import date
 from typing import Any
 
 from app.agents.prompts import SYSTEM_PROMPT
@@ -93,6 +94,31 @@ class FamilyContextAgent:
                 {
                     "role": history_message["role"],
                     "content": history_message["content"],
+                }
+            )
+
+        # Add attached document context for the AI.
+        document = state.metadata.get("document")
+
+        if document:
+            document_context = (
+                "The user attached the following document. "
+                "Use this document as the primary source when answering "
+                "questions about it.\n\n"
+                f"File name: {document.get('file_name')}\n"
+                f"Document type: {document.get('document_type')}\n"
+                f"Processing status: "
+                f"{document.get('processing_status')}\n"
+                f"Extracted text: "
+                f"{document.get('extracted_text')}\n"
+                f"Extracted data: "
+                f"{json.dumps(document.get('extracted_data'), default=str)}"
+            )
+
+            messages.append(
+                {
+                    "role": "system",
+                    "content": document_context,
                 }
             )
 
@@ -198,4 +224,6 @@ class FamilyContextAgent:
             "Please try again."
         )
         return state
+
+
 FamilyContextOrchestrator = FamilyContextAgent

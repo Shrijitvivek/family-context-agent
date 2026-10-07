@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     nebius_api_key: str = ""
     nebius_base_url: str = "https://api.studio.nebius.ai/v1/"
     nvidia_model_name: str = ""
+    vision_model_name: str = "Qwen/Qwen2.5-VL-72B-Instruct"
     model_timeout_seconds: float = 60.0
 
     upload_dir: str = "storage/uploads"

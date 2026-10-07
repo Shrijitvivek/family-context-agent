@@ -40,24 +40,54 @@ MAX_PDF_PAGES = 20
 MAX_TEXT_CHARS = 12_000
 
 EXTRACTION_PROMPT = f"""
-You read household documents (bills, appointment letters, lab test slips, school
-notices, renewal reminders) and return ONE JSON object with these keys:
+You extract structured information from household documents such as bills,
+appointment letters, lab test slips, school notices, invoices, and renewal
+reminders.
+
+Return ONE JSON object with exactly these top-level keys:
 
 commitment_type: one of {", ".join(t.value for t in CommitmentType)}, or null
-title: short name such as "KSEB Electricity Bill", or null
-category: short code such as ELECTRICITY, MEDICAL, SCHOOL_FEES, or null
-description: one sentence, or null
-amount: number without currency symbol, or null
+title: short name for the document or commitment, or null
+category: short category such as ELECTRICITY, MEDICAL, SCHOOL_FEES, or null
+description: one sentence summary, or null
+amount: main payable amount as a number without currency symbol, or null
 start_date: YYYY-MM-DD, or null
 due_date: YYYY-MM-DD, or null
-member_name: the family member the document is for, or null
-confidence: 0 to 1, how sure you are overall
-missing_fields: list of keys you could not find
+member_name: family member the document is for, or null
 
-Use null for anything not clearly present. Never guess amounts or dates.
-Return only the JSON object.
+fields: an object containing OTHER useful information found in the document.
+Preserve document-specific information here instead of dropping it.
+
+Examples of document-specific information include:
+- bills: consumer number, account number, meter number, billing period,
+  previous reading, current reading, units consumed, tariff, taxes,
+  late fee, payment status
+- medical documents: hospital, doctor, patient, appointment date,
+  department, test name, report date, prescription details
+- school documents: student name, school name, academic year, class,
+  fee type, invoice number, payment status
+- invoices: invoice number, vendor, invoice date, customer, tax,
+  subtotal, payment status
+- renewal documents: service name, provider, renewal date, policy number,
+  membership number
+
+Only include information that is actually visible in the document.
+Do not invent or guess values.
+
+confidence: number from 0 to 1 representing overall extraction confidence
+missing_fields: list of important fields that could not be found
+
+Important:
+- Extract as much useful information as is clearly visible.
+- Do not omit useful document-specific fields just because they are not
+  listed above.
+- Keep the original value when possible.
+- Do not confuse labels with values.
+- Never guess amounts, dates, names, IDs, or numbers.
+- Use null when a common field is not clearly present.
+- Use an empty object for fields when no additional information is found.
+- Return only the JSON object. Do not include markdown or explanations.
 """.strip()
-
 
 def extract_pdf_text(content: bytes) -> str:
     try:
@@ -71,16 +101,35 @@ def extract_pdf_text(content: bytes) -> str:
 
 
 def parse_extracted_fields(raw: dict[str, Any]) -> ExtractedFields:
-    """Keep every valid field; drop (and report) any the model got wrong."""
+    """Validate common fields while preserving document-specific fields."""
 
-    known = {k: v for k, v in raw.items() if k in ExtractedFields.model_fields}
+    known_fields = set(ExtractedFields.model_fields)
+
+    known = {
+        key: value
+        for key, value in raw.items()
+        if key in known_fields
+    }
+
     try:
         return ExtractedFields.model_validate(known)
     except ValidationError as exc:
-        invalid = {str(error["loc"][0]) for error in exc.errors() if error["loc"]}
-        cleaned = {k: v for k, v in known.items() if k not in invalid}
+        invalid = {
+            str(error["loc"][0])
+            for error in exc.errors()
+            if error["loc"]
+        }
+
+        cleaned = {
+            key: value
+            for key, value in known.items()
+            if key not in invalid
+        }
+
         fields = ExtractedFields.model_validate(cleaned)
-        fields.missing_fields = sorted(set(fields.missing_fields) | invalid)
+        fields.missing_fields = sorted(
+            set(fields.missing_fields) | invalid
+        )
         return fields
 
 
@@ -179,11 +228,16 @@ class DocumentService:
 
         try:
             raw = await self._model.complete_json(
-                [
-                    {"role": "system", "content": EXTRACTION_PROMPT},
-                    {"role": "user", "content": user_content},
-                ]
-            )
+    [
+        {"role": "system", "content": EXTRACTION_PROMPT},
+        {"role": "user", "content": user_content},
+    ],
+    model=(
+        self._model.vision_model
+        if document.mime_type != "application/pdf"
+        else None
+    ),
+)
         except AIModelError as exc:
             return await self._finish(document, DocumentStatus.FAILED, {"error": str(exc)})
 

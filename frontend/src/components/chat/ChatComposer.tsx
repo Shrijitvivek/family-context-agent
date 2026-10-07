@@ -2,33 +2,59 @@
  * ChatComposer
  *
  * Provides the message input area for the Family Context chat interface.
- *
- * Responsibilities:
- * - Allow the user to type a message.
- * - Send the message when the form is submitted.
- * - Support Enter to send and Shift+Enter for a new line.
- * - Show a loading state while the message is being processed.
  */
 
-import { useState } from "react";
-import { Send } from "lucide-react";
+import { useState, useRef } from "react";
+import { Send, Paperclip } from "lucide-react";
 import Button from "../ui/Button";
-
+import {uploadDocument , type DocumentResponse} from "../../services/api/documents"
 interface ChatComposerProps {
   onSend: (message: string) => void;
+  familyId: string; // Optional familyId prop
+  onDocumentUpload?: (document: DocumentResponse) => void; // Optional callback for document upload
   loading?: boolean;
 }
 
 export default function ChatComposer({
   onSend,
+  familyId,
+  onDocumentUpload,
   loading = false,
 }: ChatComposerProps) {
   const [message, setMessage] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null); // State to hold the selected file
+  const fileInputRef = useRef<HTMLInputElement | null>(null); // Ref for the file input element
 
+  // Handle file selection
+  const handleFileChange = (
+    event: React.ChangeEvent<HTMLInputElement>, // Add this line to specify the type of the event
+  ) => {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    setSelectedFile(file);
+    void handleFileUpload(file); // Call the file upload function after selecting a file
+  };
+
+  
+  const handleFileUpload = async (file: File) => {
+  try {
+    const document = await uploadDocument(familyId,file);
+
+    onDocumentUpload?.(document);
+  } catch (error) {
+    console.error("Document upload failed:", error);
+  }
+};
+
+  // Handle file upload
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    const trimmedMessage = message.trim();
+    const trimmedMessage = message.trim(); // Trim leading and trailing spaces
 
     if (!trimmedMessage || loading) {
       return;
@@ -38,10 +64,10 @@ export default function ChatComposer({
     setMessage("");
   };
 
-  const handleKeyDown = (
-    event: React.KeyboardEvent<HTMLTextAreaElement>,
-  ) => {
+  // Handle Enter key press for sending message
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
+      // Check if Enter is pressed without Shift
       event.preventDefault();
 
       const form = event.currentTarget.form;
@@ -57,7 +83,32 @@ export default function ChatComposer({
       onSubmit={handleSubmit}
       className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
     >
+      {selectedFile && (
+        <div className="mb-2 flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          <Paperclip size={14} />
+          <span className="truncate">{selectedFile.name}</span>
+        </div>
+      )}
+
       <div className="flex items-end gap-3">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.jpg,.jpeg,.png"
+          onChange={handleFileChange}
+          className="hidden"
+        />
+
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={loading}
+          className="mb-1 shrink-0 rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+          aria-label="Attach document"
+        >
+          <Paperclip size={23} />
+        </button>
+
         <textarea
           value={message}
           onChange={(event) => setMessage(event.target.value)}
