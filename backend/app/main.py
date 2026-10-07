@@ -7,9 +7,22 @@ from fastapi.responses import JSONResponse
 from app.api.v1.router import api_router
 from app.core.exceptions import FamilyContextError
 
+from contextlib import asynccontextmanager
+
+from app.jobs.scheduler import start_scheduler, stop_scheduler
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    start_scheduler()
+
+    yield
+
+    stop_scheduler()
+
 app = FastAPI(
     title="Family Context Agent",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 

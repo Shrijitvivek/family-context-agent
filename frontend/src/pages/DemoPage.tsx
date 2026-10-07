@@ -1,35 +1,37 @@
-/**
- * DemoPage
- *
- * Provides the Judge Mode page for demonstrating the Family Context Agent.
- *
- * Responsibilities:
- * - Provide a dedicated route for Judge Mode.
- * - Serve as the foundation for future demo scenarios.
- * - Keep demo functionality separate from the main application pages.
- */
-
+import { useNavigate } from "react-router-dom";
 import PageHeader from "../components/ui/PageHeader";
-import Card from "../components/ui/Card";
+import ScenarioPicker from "../components/demo/ScenarioPicker";
 
 export default function DemoPage() {
+  const navigate = useNavigate();
+
+  const handleLoaded = (familyId: string) => {
+    // Store the selected demo family so the normal application
+    // screens can use it.
+    localStorage.setItem("demo_family_id", familyId);
+
+    navigate("/");
+  };
+
   return (
     <div>
       <PageHeader
         title="Judge Mode"
-        description="Demonstrate the main capabilities of the Family Context Agent."
+        description="Load a prepared family scenario and demonstrate the agent end-to-end."
       />
 
-      <Card>
-        <h2 className="text-lg font-semibold text-slate-900">
-          Demo Mode
+      <ScenarioPicker onLoaded={handleLoaded} />
+
+      <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-5">
+        <h2 className="font-semibold text-amber-900">
+          Demo environment
         </h2>
 
-        <p className="mt-2 text-sm text-slate-500">
-          Demo scenarios will be added here as the agent integration is
-          completed.
+        <p className="mt-2 text-sm text-amber-800">
+          Loading a scenario replaces the existing demo household
+          with the selected fictional scenario.
         </p>
-      </Card>
+      </div>
     </div>
   );
 }

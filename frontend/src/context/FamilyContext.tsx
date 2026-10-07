@@ -41,7 +41,14 @@ export function FamilyProvider({ children }: FamilyProviderProps) {
         const data = await getFamilies();
         setFamilies(data);
 
-        if (data.length > 0) {
+        const demoFamilyId = localStorage.getItem("demo_family_id");
+
+        if (
+          demoFamilyId &&
+          data.some((family) => family.id === demoFamilyId)
+        ) {
+          setSelectedFamilyId(demoFamilyId);
+        } else if (data.length > 0) {
           setSelectedFamilyId(data[0].id);
         }
       } catch {
