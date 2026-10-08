@@ -12,10 +12,12 @@ export function useChat(familyId: string) {
     message: string,
     documentId?: string,
   ) => {
+    // Don't send empty messages
     if (!message.trim() || loading) {
       return;
     }
 
+    // Add user's message immediately to the chat
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: "user",
@@ -27,6 +29,13 @@ export function useChat(familyId: string) {
     setError(null);
 
     try {
+      console.log("Sending chat request:", {
+        family_id: familyId,
+        conversation_id: conversationId,
+        message,
+        document_id: documentId,
+      });
+
       const response = await sendMessage({
         family_id: familyId,
         conversation_id: conversationId,
@@ -34,8 +43,12 @@ export function useChat(familyId: string) {
         document_id: documentId,
       });
 
+      console.log("Chat response:", response);
+
+      // Save conversation ID for the next message
       setConversationId(response.conversation_id ?? undefined);
 
+      // Add assistant response
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
         role: "assistant",
@@ -43,8 +56,16 @@ export function useChat(familyId: string) {
       };
 
       setMessages((current) => [...current, assistantMessage]);
-    } catch {
-      setError("Unable to send your message. Please try again.");
+    } catch (error) {
+      // Log the actual error in browser console
+      console.error("CHAT REQUEST ERROR:", error);
+
+      // Show the real error instead of hiding it
+      if (error instanceof Error) {
+        setError(error.message);
+      } else {
+        setError("Unable to send your message. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
