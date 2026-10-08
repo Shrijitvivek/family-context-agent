@@ -1,17 +1,10 @@
-from uuid import uuid4
-
-import pytest
-
 from app.agents.clarification import (
     build_clarification,
     find_missing_fields,
 )
-from app.agents.orchestrator import FamilyContextOrchestrator
-from app.schemas.agent import AgentContext
-from app.tools.registry import ToolRegistry
 
 
-def test_expense_requires_amount_category_and_date() -> None:
+def test_expense_requires_amount_and_category_but_not_date() -> None:
     missing = find_missing_fields(
         "add_expense",
         {
@@ -19,10 +12,7 @@ def test_expense_requires_amount_category_and_date() -> None:
         },
     )
 
-    assert missing == [
-        "category",
-        "expense_date",
-    ]
+    assert missing == ["category"]
 
 
 def test_complete_expense_does_not_need_clarification() -> None:
@@ -36,6 +26,15 @@ def test_complete_expense_does_not_need_clarification() -> None:
     )
 
     assert clarification is None
+
+
+def test_expense_without_date_does_not_need_clarification() -> None:
+    decision = build_clarification(
+        "add_expense",
+        {"amount": 500, "category": "groceries"},
+    )
+
+    assert decision is None
 
 
 def test_missing_expense_category_returns_question() -> None:
