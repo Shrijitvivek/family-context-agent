@@ -1,3 +1,4 @@
+
 import type { TimelineResponse } from "../../types/api";
 import { apiClient } from "./client";
 
@@ -51,11 +52,10 @@ export async function getTimeline(
         | "medium"
         | "high"
         | "urgent",
+      memberId: item.member_id ?? null,
       familyMember: null,
     })),
   );
 
-  return {
-    items,
-  };
+  return { items };
 }

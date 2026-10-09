@@ -21,10 +21,38 @@ export interface ChatResponse {
   metadata: Record<string, unknown>;
 }
 
+// A previously stored conversation message
+export interface ChatHistoryMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+}
+
+// Response from the conversation history endpoint
+export interface ChatHistoryResponse {
+  conversation_id: string;
+  messages: ChatHistoryMessage[];
+}
+
 // Send a message to the Family Context Agent
 export const sendMessage = async (
-  data: ChatRequest
+  data: ChatRequest,
 ): Promise<ChatResponse> => {
   const response = await apiClient.post<ChatResponse>("/chat", data);
+  return response.data;
+};
+
+// Retrieve previous messages for a conversation
+export const getChatHistory = async (
+  conversationId: string,
+  familyId: string,
+): Promise<ChatHistoryResponse> => {
+  const response = await apiClient.get<ChatHistoryResponse>(
+    `/chat/${conversationId}`,
+    {
+      params: { family_id: familyId },
+    },
+  );
+
   return response.data;
 };

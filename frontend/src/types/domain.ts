@@ -7,6 +7,7 @@ export interface Commitment {
 	dueDate: string;
 	status: CommitmentStatus;
 	priority: CommitmentPriority;
+	memberId?: string | null;
 	familyMember?: string | null;
 	category?: string | null;
 	description?: string | null;

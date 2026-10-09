@@ -3,6 +3,7 @@ import { apiClient } from "./client";
 export interface DocumentResponse {
   id: string;
   family_id: string;
+  uploaded_by_member_id: string | null;
   file_name: string;
   file_type: string | null;
   mime_type: string | null;
@@ -13,14 +14,17 @@ export interface DocumentResponse {
   updated_at: string;
 }
 
+
 export const getDocuments = async (
   familyId: string,
+  memberId?: string | null,
 ): Promise<DocumentResponse[]> => {
   const response = await apiClient.get<DocumentResponse[]>(
     "/documents",
     {
       params: {
         family_id: familyId,
+        ...(memberId ? { member_id: memberId } : {}),
       },
     },
   );
@@ -31,11 +35,16 @@ export const getDocuments = async (
 export const uploadDocument = async (
   familyId: string,
   file: File,
+  memberId?: string | null,
 ): Promise<DocumentResponse> => {
   const formData = new FormData();
 
   formData.append("family_id", familyId);
   formData.append("file", file);
+
+  if (memberId) {
+    formData.append("member_id", memberId);
+  }
 
   const response = await apiClient.post<DocumentResponse>(
     "/documents",

@@ -162,6 +162,21 @@ class DocumentService:
     ) -> list[Document]:
         return await self._documents.list_by_family(family_id)
 
+    
+    async def list_by_member(
+        self,
+        family_id: UUID,
+        member_id: UUID,
+    ) -> list[Document]:
+        """List documents uploaded by a specific family member."""
+        documents = await self._documents.list_by_family(family_id)
+        return [
+            document
+            for document in documents
+            if document.uploaded_by_member_id == member_id
+        ]
+
+
     async def upload(
         self,
         *,

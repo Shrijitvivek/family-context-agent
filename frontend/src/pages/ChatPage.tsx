@@ -1,4 +1,6 @@
 
+import { useState } from "react";
+
 import PageHeader from "../components/ui/PageHeader";
 import Card from "../components/ui/Card";
 import MessageList from "../components/chat/MessageList";
@@ -6,23 +8,22 @@ import ChatComposer from "../components/chat/ChatComposer";
 import { useChat } from "../hooks/useChat";
 import { useFamily } from "../context/FamilyContext";
 import type { DocumentResponse } from "../services/api/documents";
-import { useState } from "react";
 
 export default function ChatPage() {
-  const {
-    selectedFamilyId,
-    members,
-    selectedMemberId,
-    setSelectedMemberId,
-  } = useFamily();
+  const { selectedFamilyId, selectedMemberId } = useFamily();
 
   const [attachedDocument, setAttachedDocument] =
     useState<DocumentResponse | null>(null);
 
-  const { messages, loading, error, sendChatMessage } = useChat(
-    selectedFamilyId ?? "",
-    selectedMemberId,
-  );
+  const familyId = selectedFamilyId ?? "";
+
+  const {
+    messages,
+    loading,
+    historyLoading,
+    error,
+    sendChatMessage,
+  } = useChat(familyId, selectedMemberId);
 
   return (
     <div>
@@ -33,37 +34,25 @@ export default function ChatPage() {
 
       <Card className="p-3 sm:p-4">
         <div className="mb-4 px-2 sm:px-4">
-          <label
-            htmlFor="chat-member"
-            className="mb-1 block text-sm font-medium text-gray-700"
-          >
-            Chatting as
-          </label>
-
-          <select
-            id="chat-member"
-            value={selectedMemberId ?? ""}
-            onChange={(event) => setSelectedMemberId(event.target.value)}
-            disabled={members.length === 0 || loading}
-            className="w-full max-w-sm rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-          >
-            {members.filter((member) => member.is_active).map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.name}
-              </option>
-            ))}
-          </select>
-
-          {members.length === 0 && (
-            <p className="mt-1 text-sm text-gray-500">
-              No family members available.
-            </p>
-          )}
+          <p className="text-sm text-gray-500">
+            {selectedMemberId
+              ? "Chatting with your selected family member's context."
+              : "Chatting with the context of your whole family."}
+          </p>
         </div>
 
         <div className="flex min-h-[calc(100vh-340px)] flex-col">
           <div className="flex-1 overflow-y-auto p-2 sm:p-4">
-            <MessageList messages={messages} />
+            {historyLoading ? (
+              <div
+                className="flex min-h-[200px] items-center justify-center text-sm text-gray-500"
+                role="status"
+              >
+                Loading your conversation...
+              </div>
+            ) : (
+              <MessageList messages={messages} />
+            )}
           </div>
 
           {error && (
@@ -80,10 +69,12 @@ export default function ChatPage() {
               onSend={(message) =>
                 sendChatMessage(message, attachedDocument?.id)
               }
-              familyId={selectedFamilyId ?? ""}
+              familyId={familyId}
               onDocumentUpload={setAttachedDocument}
               loading={
-                loading || !selectedFamilyId || !selectedMemberId
+                loading ||
+                historyLoading ||
+                !selectedFamilyId
               }
             />
           </div>

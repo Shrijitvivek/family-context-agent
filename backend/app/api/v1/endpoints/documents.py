@@ -36,11 +36,17 @@ async def upload_document(
     )
     return await service.process(family_id, document.id, today)
 
+
+# List documents for a family, optionally filtered by member.
 @router.get("", response_model=list[DocumentRead])
 async def list_documents(
     family_id: UUID,
     service: DocumentServiceDep,
+    member_id: UUID | None = None,
 ):
+    if member_id is not None:
+        return await service.list_by_member(family_id, member_id)
+
     return await service.list_by_family(family_id)
 
 
