@@ -8,13 +8,20 @@ import {
 
 import {
   getFamilies,
+  getFamilyMembers,
   type Family,
+  type FamilyMember,
 } from "../services/api/families";
 
 interface FamilyContextValue {
   families: Family[];
   selectedFamilyId: string | null;
   setSelectedFamilyId: (familyId: string) => void;
+
+  members: FamilyMember[];
+  selectedMemberId: string | null;
+  setSelectedMemberId: (memberId: string) => void;
+
   loading: boolean;
   error: string | null;
 }
@@ -32,6 +39,12 @@ export function FamilyProvider({ children }: FamilyProviderProps) {
   const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(
     null
   );
+
+  const [members, setMembers] = useState<FamilyMember[]>([]);
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(
+    null
+  );
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,12 +74,41 @@ export function FamilyProvider({ children }: FamilyProviderProps) {
     loadFamilies();
   }, []);
 
+  useEffect(() => {
+    if (!selectedFamilyId) {
+      setMembers([]);
+      setSelectedMemberId(null);
+      return;
+    }
+
+    const loadMembers = async () => {
+      try {
+        const data = await getFamilyMembers(selectedFamilyId);
+
+        setMembers(data);
+
+        const firstActiveMember = data.find((member) => member.is_active);
+
+        setSelectedMemberId(firstActiveMember?.id ?? null);
+      } catch {
+        setMembers([]);
+        setSelectedMemberId(null);
+        setError("Unable to load family members.");
+      }
+    };
+
+    loadMembers();
+  }, [selectedFamilyId]);
+
   return (
     <FamilyContext.Provider
       value={{
         families,
         selectedFamilyId,
         setSelectedFamilyId,
+        members,
+        selectedMemberId,
+        setSelectedMemberId,
         loading,
         error,
       }}

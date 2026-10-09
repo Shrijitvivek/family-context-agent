@@ -3,7 +3,7 @@ import { apiClient } from "./client";
 // Message sent to the Family Context Agent
 export interface ChatRequest {
   family_id: string;
-  user_id?: string;
+  member_id?: string;
   conversation_id?: string;
   message: string;
   document_id?: string;

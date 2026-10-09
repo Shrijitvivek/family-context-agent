@@ -2,7 +2,10 @@ import { useState } from "react";
 import { sendMessage } from "../services/api/chat";
 import type { ChatMessage } from "../components/chat/MessageList";
 
-export function useChat(familyId: string) {
+export function useChat(
+  familyId: string,
+  memberId: string | null,
+) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
@@ -29,6 +32,7 @@ export function useChat(familyId: string) {
     try {
       const response = await sendMessage({
         family_id: familyId,
+        member_id: memberId ?? undefined,
         conversation_id: conversationId,
         message,
         document_id: documentId,
