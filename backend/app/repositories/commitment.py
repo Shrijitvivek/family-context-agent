@@ -203,6 +203,8 @@ class CommitmentRepository:
 
         if payload.due_date is not None:
             commitment.due_date = payload.due_date
+        if payload.title is not None:
+            commitment.title = payload.title
 
         # Load server-generated values (completed_at, updated_at) so callers can
         # serialise the row without an implicit lazy load in async code.

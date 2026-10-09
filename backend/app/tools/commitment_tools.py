@@ -48,6 +48,7 @@ from app.services.document import DocumentService
 from app.utils.dates import today_in
 
 
+
 # Types that are meaningless without a date: ask instead of saving an undated bill.
 DATE_REQUIRED_TYPES = frozenset(
     {
@@ -294,9 +295,14 @@ async def _with_document_proposal(
 ) -> CreateCommitmentInput:
     """Fill fields the agent left empty from the extraction the user confirmed."""
 
+    if payload.document_id is None:
+        raise ToolInputValidationError(
+            "A document ID is required to read the uploaded document."
+        )
+
     document = await documents.get(
-        payload.family_id,
-        payload.document_id,
+    payload.family_id,
+    payload.document_id,
     )
 
     proposal = document.extracted_data or {}
@@ -435,25 +441,28 @@ def _check_status_change(
         )
 
 
+
 async def update_commitment(
     service: CommitmentService,
     payload: CommitmentUpdate,
 ) -> UpdateCommitmentResult:
     """Update an existing commitment."""
 
-    # Amount is now a valid update field.
+    # Validate that at least one update field was provided.
     if (
-        payload.status is None
+        payload.title is None
+        and payload.status is None
         and payload.priority is None
         and payload.amount is None
         and payload.due_date is None
     ):
         raise ToolInputValidationError(
             "Nothing to update. Ask the user what should change: "
-            "amount, status, priority, or due date.",
+            "title, amount, status, priority, or due date.",
             details={
                 "tool_name": "update_commitment",
                 "missing_fields": [
+                    "title",
                     "status",
                     "priority",
                     "amount",
@@ -470,7 +479,7 @@ async def update_commitment(
     previous_status = CommitmentStatus(current.status)
     previous_amount = current.amount
     previous_due_date = current.due_date
-    title = current.title
+    previous_title = current.title
 
     if payload.status is not None:
         _check_status_change(
@@ -478,6 +487,7 @@ async def update_commitment(
             payload.status,
         )
 
+    # Detect an actual due-date change.
     rescheduled = (
         payload.due_date is not None
         and payload.due_date != previous_due_date
@@ -486,7 +496,8 @@ async def update_commitment(
     if rescheduled:
         if previous_status in TERMINAL_STATUSES:
             raise ConflictError(
-                f"'{title}' is already {previous_status.value} "
+                f"'{previous_title}' is already "
+                f"{previous_status.value} "
                 "and cannot be rescheduled. Create a new commitment "
                 "if it is happening again.",
                 details={
@@ -495,18 +506,19 @@ async def update_commitment(
             )
 
         if (
-            current.start_date
-            and payload.due_date < current.start_date
-        ):
+        current.start_date is not None
+        and payload.due_date is not None
+        and payload.due_date < current.start_date):
             raise ToolInputValidationError(
-                f"The new due date is before '{title}' starts on "
-                f"{current.start_date.isoformat()}.",
+                f"The new due date is before '{previous_title}' "
+                f"starts on {current.start_date.isoformat()}.",
                 details={
                     "tool_name": "update_commitment",
                     "errors": ["due_date before start_date"],
                 },
             )
 
+    # Preserve the existing overdue-rescheduling behavior.
     status = payload.status
 
     if (
@@ -519,11 +531,22 @@ async def update_commitment(
 
     changes: list[str] = []
 
+    # Title change detection.
+    if (
+        payload.title is not None
+        and payload.title != previous_title
+    ):
+        changes.append(
+            f"title '{previous_title}' -> '{payload.title}'"
+        )
+
+    # Status change detection.
     if status is not None and status != previous_status:
         changes.append(
             f"status {previous_status.value} -> {status.value}"
         )
 
+    # Priority change detection.
     if (
         payload.priority is not None
         and payload.priority.value != current.priority
@@ -532,7 +555,7 @@ async def update_commitment(
             f"priority {current.priority} -> {payload.priority.value}"
         )
 
-    # Amount change detection
+    # Amount change detection.
     if (
         payload.amount is not None
         and payload.amount != current.amount
@@ -541,30 +564,33 @@ async def update_commitment(
             f"amount ₹{current.amount} -> ₹{payload.amount}"
         )
 
+    # Due-date change detection.
     if rescheduled:
-        old = (
+        old_date = (
             previous_due_date.isoformat()
             if previous_due_date
             else "no date"
         )
 
+        new_date = (payload.due_date.isoformat()
+        if payload.due_date is not None
+        else "no date")
+
         changes.append(
-            f"due date {old} -> {payload.due_date.isoformat()}"
-        )
+        f"due date {old_date} -> {new_date}")
 
     if changes:
-        # model_copy preserves amount, priority and due_date from payload
-        # while applying the calculated status.
+        # Preserve all supplied fields while applying any calculated status.
         commitment = await service.update(
             payload.model_copy(
                 update={"status": status}
             )
         )
-
     else:
-        # Idempotent update: nothing actually changed.
+        # No actual changes: avoid an unnecessary database update.
         commitment = current
 
+    # Report the updated commitment and the changes made.
     return UpdateCommitmentResult(
         commitment_id=commitment.id,
         status=CommitmentStatus(commitment.status),
@@ -577,12 +603,12 @@ async def update_commitment(
         previous_due_date=previous_due_date,
         changes=changes,
         message=(
-            f"Updated '{title}': "
+            f"Updated '{commitment.title}': "
             + "; ".join(changes)
             + "."
             if changes
             else (
-                f"'{title}' already had those values; "
+                f"'{previous_title}' already had those values; "
                 "nothing changed."
             )
         ),
