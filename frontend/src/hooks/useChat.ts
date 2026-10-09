@@ -10,8 +10,7 @@ import type { ChatMessage } from "../components/chat/MessageList";
 const getStorageKey = (
   familyId: string,
   memberId: string | null,
-) =>
-  `family-chat:${familyId}:${memberId ?? "all-family"}`;
+) => `family-chat:${familyId}:${memberId ?? "all-family"}`;
 
 export function useChat(
   familyId: string,
@@ -23,7 +22,6 @@ export function useChat(
   const [historyLoading, setHistoryLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Restore the correct conversation when the family or member changes.
   useEffect(() => {
     let cancelled = false;
 
@@ -66,7 +64,9 @@ export function useChat(
             content: message.content,
           })),
         );
-      } catch {
+      } catch (error) {
+        console.error("CHAT HISTORY ERROR:", error);
+
         if (!cancelled) {
           setError("Unable to load your previous conversation.");
         }
@@ -106,6 +106,14 @@ export function useChat(
       setError(null);
 
       try {
+        console.log("Sending chat request:", {
+          family_id: familyId,
+          member_id: memberId,
+          conversation_id: conversationId,
+          message,
+          document_id: documentId,
+        });
+
         const response = await sendMessage({
           family_id: familyId,
           ...(memberId ? { member_id: memberId } : {}),
@@ -115,6 +123,8 @@ export function useChat(
           message,
           ...(documentId ? { document_id: documentId } : {}),
         });
+
+        console.log("Chat response:", response);
 
         const nextConversationId =
           response.conversation_id ?? conversationId;
@@ -135,8 +145,14 @@ export function useChat(
         };
 
         setMessages((current) => [...current, assistantMessage]);
-      } catch {
-        setError("Unable to send your message. Please try again.");
+      } catch (error) {
+        console.error("CHAT REQUEST ERROR:", error);
+
+        if (error instanceof Error) {
+          setError(error.message);
+        } else {
+          setError("Unable to send your message. Please try again.");
+        }
       } finally {
         setLoading(false);
       }
