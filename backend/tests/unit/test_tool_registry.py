@@ -65,6 +65,12 @@ class FakeCommitmentRepository:
     async def assert_scope(self, family_id: UUID, *, member_id=None, document_id=None) -> None:
         self.scope_checks.append((family_id, member_id, document_id))
 
+    async def get(self, family_id: UUID, commitment_id: UUID) -> Commitment:
+        for commitment in [*self.added, *self.candidates]:
+            if commitment.id == commitment_id and commitment.family_id == family_id:
+                return commitment
+        raise AssertionError(f"test commitment {commitment_id} was not seeded")
+
     async def find_likely_duplicates(self, **kwargs) -> list[Commitment]:
         return self.candidates
 
@@ -177,12 +183,20 @@ async def test_registry_executes_the_first_three_tools() -> None:
     assert update_result["success"] is True
     assert update_result["status"] == "COMPLETED"
 
+    second_commitment_result = await registry.dispatch(
+        "create_commitment",
+        {
+            "family_id": str(family_id),
+            "commitment_type": "TASK",
+            "title": "Submit forms",
+        },
+    )
     dependency_result = await registry.dispatch(
         "create_dependency",
         {
             "family_id": str(family_id),
-            "source_commitment_id": str(uuid4()),
-            "target_commitment_id": str(uuid4()),
+            "source_commitment_id": str(commitment_repository.added[0].id),
+            "target_commitment_id": second_commitment_result["commitment_id"],
             "relationship_type": "MUST_COMPLETE_BEFORE",
         }
     )
@@ -264,15 +278,21 @@ async def test_direct_dependency_and_priority_tool_functions() -> None:
     from app.tools.priority_tools import get_family_priorities
 
     family_id = uuid4()
-    commitment_repository = FakeCommitmentRepository()
+    source = Commitment(
+        id=uuid4(), family_id=family_id, title="Get passport photos", commitment_type="TASK"
+    )
+    target = Commitment(
+        id=uuid4(), family_id=family_id, title="Submit passport application", commitment_type="TASK"
+    )
+    commitment_repository = FakeCommitmentRepository([source, target])
     commitment_service = CommitmentService(commitment_repository)  # type: ignore[arg-type]
 
     dep_res = await create_dependency(
         commitment_service,
         CommitmentDependencyCreate(
             family_id=family_id,
-            source_commitment_id=uuid4(),
-            target_commitment_id=uuid4(),
+            source_commitment_id=source.id,
+            target_commitment_id=target.id,
             relationship_type="MUST_COMPLETE_BEFORE",
         ),
     )
