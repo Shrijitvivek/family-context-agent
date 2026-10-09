@@ -1,16 +1,12 @@
+
 /**
  * MessageList
  *
- * Displays the conversation messages in the Family Context chat interface.
- *
- * Responsibilities:
- * - Display user and assistant messages.
- * - Visually distinguish between message types.
- * - Keep the conversation easy to read.
- * - Render assistant Markdown, including GitHub-style tables.
- * - Show an empty state when no messages exist.
+ * Displays chat messages, renders assistant Markdown,
+ * and automatically scrolls to the latest message.
  */
 
+import { useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -25,6 +21,15 @@ interface MessageListProps {
 }
 
 export default function MessageList({ messages }: MessageListProps) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "end",
+    });
+  }, [messages]);
+
   if (messages.length === 0) {
     return (
       <div className="flex min-h-[400px] items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center">
@@ -38,6 +43,7 @@ export default function MessageList({ messages }: MessageListProps) {
             related to your family's context.
           </p>
         </div>
+        <div ref={bottomRef} />
       </div>
     );
   }
@@ -54,7 +60,9 @@ export default function MessageList({ messages }: MessageListProps) {
         return (
           <div
             key={message.id}
-            className={`flex min-w-0 ${isUser ? "justify-end" : "justify-start"}`}
+            className={`flex min-w-0 ${
+              isUser ? "justify-end" : "justify-start"
+            }`}
           >
             <div
               className={`min-w-0 max-w-[85%] break-words rounded-2xl px-4 py-3 text-sm leading-relaxed sm:max-w-[75%] ${
@@ -69,12 +77,16 @@ export default function MessageList({ messages }: MessageListProps) {
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   components={{
-                    p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+                    p: ({ children }) => (
+                      <p className="mb-3 last:mb-0">{children}</p>
+                    ),
                     h1: ({ children }) => (
                       <h1 className="mb-2 text-lg font-semibold">{children}</h1>
                     ),
                     h2: ({ children }) => (
-                      <h2 className="mb-2 text-base font-semibold">{children}</h2>
+                      <h2 className="mb-2 text-base font-semibold">
+                        {children}
+                      </h2>
                     ),
                     h3: ({ children }) => (
                       <h3 className="mb-2 font-semibold">{children}</h3>
@@ -115,6 +127,8 @@ export default function MessageList({ messages }: MessageListProps) {
           </div>
         );
       })}
+
+      <div ref={bottomRef} aria-hidden="true" />
     </div>
   );
 }

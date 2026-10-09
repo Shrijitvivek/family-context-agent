@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 
 import {
@@ -14,12 +15,20 @@ import {
 import { useFamily } from "../context/FamilyContext";
 
 export default function ExpensesPage() {
-  const { selectedFamilyId } = useFamily();
+  const {
+    selectedFamilyId,
+    selectedMemberId,
+    members,
+  } = useFamily();
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const selectedMember = members.find(
+    (member) => member.id === selectedMemberId,
+  );
 
   useEffect(() => {
     if (!selectedFamilyId) {
@@ -29,31 +38,53 @@ export default function ExpensesPage() {
       return;
     }
 
+    let cancelled = false;
+
     const loadExpenses = async () => {
       try {
         setLoading(true);
         setError(null);
 
         const [expenseData, summary] = await Promise.all([
-          getExpenses(selectedFamilyId),
-          getExpenseSummary(selectedFamilyId),
+          getExpenses(selectedFamilyId, selectedMemberId),
+          getExpenseSummary(selectedFamilyId, selectedMemberId),
         ]);
 
-        setExpenses(expenseData);
-        setTotal(summary.total);
+        if (cancelled) return;
+
+        // Keep only the selected member's expenses and shared expenses.
+        // All Family displays every expense.
+        const visibleExpenses = selectedMemberId
+          ? expenseData.filter(
+              (expense) =>
+                expense.member_id === selectedMemberId ||
+                expense.member_id == null,
+            )
+          : expenseData;
+
+        setExpenses(visibleExpenses);
+        setTotal(Number(summary.total));
       } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Unable to load expenses.",
-        );
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Unable to load expenses.",
+          );
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
-    loadExpenses();
-  }, [selectedFamilyId]);
+    void loadExpenses();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedFamilyId, selectedMemberId]);
 
   const currency = new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -74,7 +105,9 @@ export default function ExpensesPage() {
           </h1>
 
           <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">
-            Recent household spending at a glance.
+            {selectedMember
+              ? `Expenses for ${selectedMember.name}, including shared expenses.`
+              : "Recent household spending at a glance."}
           </p>
         </div>
 
@@ -87,7 +120,7 @@ export default function ExpensesPage() {
 
           <div>
             <p className="text-xs font-semibold text-slate-500">
-              Total expenses
+              {selectedMember ? "Member expenses" : "Total expenses"}
             </p>
 
             <p className="mt-0.5 text-2xl font-semibold tabular-nums text-slate-950">
@@ -107,7 +140,10 @@ export default function ExpensesPage() {
       )}
 
       {loading ? (
-        <div className="mt-7 rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
+        <div
+          className="mt-7 rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500"
+          role="status"
+        >
           Loading expenses...
         </div>
       ) : (
@@ -156,10 +192,7 @@ export default function ExpensesPage() {
 
                       {item.family_member && (
                         <p className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 sm:hidden">
-                          <UserRound
-                            aria-hidden="true"
-                            size={13}
-                          />
+                          <UserRound aria-hidden="true" size={13} />
                           {item.family_member}
                         </p>
                       )}
@@ -170,18 +203,12 @@ export default function ExpensesPage() {
                     </span>
 
                     <span className="hidden items-center gap-1.5 text-sm text-slate-600 sm:inline-flex">
-                      <CalendarDays
-                        aria-hidden="true"
-                        size={14}
-                      />
-                      {new Date(item.date).toLocaleDateString(
-                        "en-IN",
-                        {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        },
-                      )}
+                      <CalendarDays aria-hidden="true" size={14} />
+                      {new Date(item.date).toLocaleDateString("en-IN", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })}
                     </span>
 
                     <div className="row-span-2 flex flex-col items-end gap-1 sm:row-span-1">
@@ -190,13 +217,10 @@ export default function ExpensesPage() {
                       </span>
 
                       <span className="text-xs text-slate-500 sm:hidden">
-                        {new Date(item.date).toLocaleDateString(
-                          "en-IN",
-                          {
-                            day: "numeric",
-                            month: "short",
-                          },
-                        )}
+                        {new Date(item.date).toLocaleDateString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                        })}
                       </span>
 
                       <span className="text-xs text-slate-500 sm:hidden">

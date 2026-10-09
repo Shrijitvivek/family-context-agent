@@ -69,11 +69,28 @@ class ChatService:
         self._document_repository = DocumentRepository(session)
         self._event_repository = AgentEventRepository(session)
 
+    async def get_history(
+        self,
+        *,
+        family_id: UUID,
+        conversation_id: UUID,
+    ):
+        """Return the stored messages for an existing conversation."""
+
+        await self._conversation_repository.get(
+            family_id,
+            conversation_id,
+        )
+
+        return await self._conversation_repository.recent_messages(
+            conversation_id,
+            limit=100,
+        )
     async def process_message(
         self,
         *,
         family_id: UUID,
-        user_id: UUID | None,
+        member_id: UUID | None,
         conversation_id: UUID | None,
         message: str,
         document_id: UUID | None = None,
@@ -112,14 +129,15 @@ class ChatService:
         
         household_context = await self._context_service.build(
             family_id=family_id,
-            member_id=user_id,
+            member_id=member_id,
         )
 
         state = AgentState(
     family_id=family_id,
-    user_id=user_id,
+    member_id=member_id,
     conversation_id=conversation_id,
     user_message=message,
+    household_context=household_context.to_prompt(), 
     history=[
         {
             "role": item.role,
@@ -166,7 +184,7 @@ class ChatService:
                         if conversation_id
                         else None
                     ),
-                    "user_id": str(user_id) if user_id else None,
+                    "member_id": str(member_id) if member_id else None,
                     "message": message,
                     "document_id": (
                         str(document_id)

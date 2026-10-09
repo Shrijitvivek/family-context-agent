@@ -1,3 +1,4 @@
+
 /**
  * HomePage
  *
@@ -21,10 +22,10 @@ import {
   getExpenses,
   type Expense,
 } from "../services/api/expenses";
-import {getDocuments} from "../services/api/documents";
+import { getDocuments } from "../services/api/documents";
 
 export default function HomePage() {
-  const { selectedFamilyId } = useFamily();
+  const { selectedFamilyId, selectedMemberId, members } = useFamily();
 
   const [upcomingItems, setUpcomingItems] = useState<Commitment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,50 +35,116 @@ export default function HomePage() {
   const [documentCount, setDocumentCount] = useState<number | null>(null);
   const [priorities, setPriorities] = useState<Priority[]>([]);
 
+  const selectedMember = members.find(
+    (member) => member.id === selectedMemberId,
+  );
+
   useEffect(() => {
     if (!selectedFamilyId) {
       setUpcomingItems([]);
+      setRecentExpenses([]);
+      setPriorities([]);
+      setExpenseTotal(null);
+      setDocumentCount(null);
       setLoading(false);
       return;
     }
 
-    const loadDashboard = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+    let cancelled = false;
 
-        const commitments = await getUpcomingCommitments(selectedFamilyId);
-        const expenseSummary = await getExpenseSummary(selectedFamilyId);
-        const expenses = await getExpenses(selectedFamilyId);
-        const documents = await getDocuments(selectedFamilyId);
-        const priorityItems = await getPriorities(selectedFamilyId);
-        setUpcomingItems(commitments);
-        setExpenseTotal(expenseSummary.total);
-        setRecentExpenses(expenses.slice(0, 3)); // Get the latest 3 expenses
-        setDocumentCount(documents.length); // Set the document count
-        setPriorities(priorityItems); // Set the priorities
+    const loadDashboard = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const [
+          commitments,
+          expenseSummary,
+          expenses,
+          documents,
+          priorityItems,
+        ] = await Promise.all([
+          getUpcomingCommitments(selectedFamilyId, selectedMemberId),
+          getExpenseSummary(selectedFamilyId, selectedMemberId),
+          getExpenses(selectedFamilyId, selectedMemberId),
+          getDocuments(selectedFamilyId, selectedMemberId),
+          getPriorities(selectedFamilyId),
+        ]);
+
+        if (cancelled) return;
+
+        // Include shared commitments when a member is selected.
+        const visibleCommitments = selectedMemberId
+          ? commitments.filter(
+              (item) =>
+                item.member_id === selectedMemberId ||
+                item.member_id == null,
+            )
+          : commitments;
+
+        // Include member-specific and unassigned expenses.
+        const visibleExpenses = selectedMemberId
+          ? expenses.filter(
+              (expense) =>
+                expense.member_id === selectedMemberId ||
+                expense.member_id == null,
+            )
+          : expenses;
+
+        setUpcomingItems(visibleCommitments);
+        setExpenseTotal(Number(expenseSummary.total));
+        setRecentExpenses(visibleExpenses.slice(0, 3));
+        setDocumentCount(documents.length);
+        setPriorities(priorityItems);
       } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Unable to load dashboard data.",
-        );
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Unable to load dashboard data.",
+          );
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
-    loadDashboard();
-  }, [selectedFamilyId]);
+    void loadDashboard();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedFamilyId, selectedMemberId]);
 
   const pendingCount = upcomingItems.filter(
     (item) => item.status === "PENDING",
   ).length;
 
+  const viewLabel = selectedMember
+    ? `${selectedMember.name}'s`
+    : "Family";
+
   return (
     <div>
       <PageHeader
-        title="Good morning, Family"
-        description="Here's what's happening with your family today."
+        title={
+          selectedMember
+            ? `${selectedMember.name}'s Dashboard`
+            : "Good morning, Family"
+        }
+        description={`Here's what's happening with ${viewLabel.toLowerCase()} today.`}
       />
+
+      {error && (
+        <div
+          role="alert"
+          className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
+          {error}
+        </div>
+      )}
 
       {/* Summary Cards */}
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -86,7 +153,9 @@ export default function HomePage() {
           <p className="mt-2 text-3xl font-bold text-slate-900">
             {loading ? "..." : upcomingItems.length}
           </p>
-          <p className="mt-1 text-sm text-slate-500">family commitments</p>
+          <p className="mt-1 text-sm text-slate-500">
+            {selectedMember ? "visible commitments" : "family commitments"}
+          </p>
         </Card>
 
         <Card>
@@ -94,23 +163,31 @@ export default function HomePage() {
           <p className="mt-2 text-3xl font-bold text-slate-900">
             {loading ? "..." : pendingCount}
           </p>
-          <p className="mt-1 text-sm text-slate-500">things need attention</p>
+          <p className="mt-1 text-sm text-slate-500">
+            things need attention
+          </p>
         </Card>
 
         <Card>
-          <p className="text-sm text-slate-500">This Month</p>
+          <p className="text-sm text-slate-500">Expenses</p>
           <p className="mt-2 text-3xl font-bold text-slate-900">
-            {expenseTotal === null
+            {loading || expenseTotal === null
               ? "..."
               : `₹${expenseTotal.toLocaleString("en-IN")}`}
           </p>
-          <p className="mt-1 text-sm text-slate-500">total expenses</p>
+          <p className="mt-1 text-sm text-slate-500">
+            {selectedMember ? "selected member's expenses" : "family expenses"}
+          </p>
         </Card>
 
         <Card>
           <p className="text-sm text-slate-500">Documents</p>
-          <p className="mt-2 text-3xl font-bold text-slate-900">{documentCount === null ? "..." : documentCount}</p>
-          <p className="mt-1 text-sm text-slate-500">family documents</p>
+          <p className="mt-2 text-3xl font-bold text-slate-900">
+            {loading || documentCount === null ? "..." : documentCount}
+          </p>
+          <p className="mt-1 text-sm text-slate-500">
+            family documents
+          </p>
         </Card>
       </section>
 
@@ -119,25 +196,22 @@ export default function HomePage() {
         {/* Upcoming Commitments */}
         <Card>
           <div className="mb-5">
-            <h2 className="text-lg font-semibold text-slate-900">Upcoming</h2>
+            <h2 className="text-lg font-semibold text-slate-900">
+              Upcoming
+            </h2>
             <p className="mt-1 text-sm text-slate-500">
               Important things coming up.
             </p>
           </div>
 
-          {error && (
-            <div
-              role="alert"
-              className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-            >
-              {error}
-            </div>
-          )}
-
           {loading ? (
-            <p className="text-sm text-slate-500">Loading commitments...</p>
+            <p className="text-sm text-slate-500">
+              Loading commitments...
+            </p>
           ) : upcomingItems.length === 0 ? (
-            <p className="text-sm text-slate-500">No upcoming commitments.</p>
+            <p className="text-sm text-slate-500">
+              No upcoming commitments.
+            </p>
           ) : (
             <div className="space-y-4">
               {upcomingItems.map((item) => (
@@ -146,13 +220,13 @@ export default function HomePage() {
                   className="flex items-center justify-between gap-4 rounded-lg border border-slate-100 p-4"
                 >
                   <div className="min-w-0">
-                    <h3 className="font-medium text-slate-900">{item.title}</h3>
-
+                    <h3 className="font-medium text-slate-900">
+                      {item.title}
+                    </h3>
                     <p className="mt-1 text-sm text-slate-500">
                       {item.due_date ?? "No due date"}
                     </p>
                   </div>
-
                   <StatusBadge status={item.status} />
                 </div>
               ))}
@@ -160,7 +234,7 @@ export default function HomePage() {
           )}
         </Card>
 
-                {/* Priority Items */}
+        {/* Priority Items */}
         <Card>
           <div className="mb-5">
             <h2 className="text-lg font-semibold text-slate-900">
@@ -171,25 +245,23 @@ export default function HomePage() {
             </p>
           </div>
 
-          {priorities.length === 0 ? (
-            <p className="text-sm text-slate-500">
-              No priority items.
-            </p>
+          {loading ? (
+            <p className="text-sm text-slate-500">Loading priorities...</p>
+          ) : priorities.length === 0 ? (
+            <p className="text-sm text-slate-500">No priority items.</p>
           ) : (
             <div className="space-y-4">
-              {priorities.map((priority) => (
+              {priorities.map((priority, index) => (
                 <div
-                  key={priority.title}
+                  key={`${priority.title}-${index}`}
                   className="rounded-lg border border-slate-100 p-4"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <h3 className="font-medium text-slate-900">
                       {priority.title}
                     </h3>
-
                     <StatusBadge status={priority.priority} />
                   </div>
-
                   <p className="mt-2 text-sm text-slate-500">
                     {priority.reason}
                   </p>
@@ -206,38 +278,36 @@ export default function HomePage() {
               Recent Expenses
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Latest family spending.
+              Latest spending.
             </p>
           </div>
 
-          <div className="space-y-4">
-            {recentExpenses.length === 0 ? (
-              <p className="text-sm text-slate-500">No recent expenses.</p>
-            ) : (
-              <div className="space-y-4">
-                {recentExpenses.map((expense) => (
-                  <div
-                    key={expense.id}
-                    className="flex items-center justify-between gap-4 rounded-lg border border-slate-100 p-4"
-                  >
-                    <div>
-                      <h3 className="font-medium text-slate-900">
-                        {expense.description}
-                      </h3>
-
-                      <p className="mt-1 text-sm text-slate-500">
-                        {expense.date}
-                      </p>
-                    </div>
-
-                    <p className="font-semibold text-slate-900">
-                      ₹{expense.amount.toLocaleString("en-IN")}
+          {loading ? (
+            <p className="text-sm text-slate-500">Loading expenses...</p>
+          ) : recentExpenses.length === 0 ? (
+            <p className="text-sm text-slate-500">No recent expenses.</p>
+          ) : (
+            <div className="space-y-4">
+              {recentExpenses.map((expense) => (
+                <div
+                  key={expense.id}
+                  className="flex items-center justify-between gap-4 rounded-lg border border-slate-100 p-4"
+                >
+                  <div className="min-w-0">
+                    <h3 className="font-medium text-slate-900">
+                      {expense.description || expense.title}
+                    </h3>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {expense.date}
                     </p>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                  <p className="shrink-0 font-semibold text-slate-900">
+                    ₹{expense.amount.toLocaleString("en-IN")}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
       </section>
     </div>

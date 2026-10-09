@@ -1,18 +1,18 @@
-"""Chat and natural-language input endpoints.
-
-TODO:
-- Accept a family, optional member, message, and attachment references.
-- Pass validated input to the chat service and agent orchestrator.
-- Return responses, clarification prompts, confirmations, and UI actions.
-"""
 """Chat and natural-language input endpoints."""
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_db
-from app.schemas.chat import ChatRequest, ChatResponse
+from app.schemas.chat import (
+    ChatHistoryMessage,
+    ChatHistoryResponse,
+    ChatRequest,
+    ChatResponse,
+)
 from app.services.chat import ChatService
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
@@ -26,10 +26,10 @@ async def chat(
 
     state = await service.process_message(
         family_id=request.family_id,
-        user_id=request.user_id,
+        member_id=request.member_id,
         conversation_id=request.conversation_id,
         message=request.message,
-        document_id=request.document_id
+        document_id=request.document_id,
     )
 
     return ChatResponse(
@@ -38,4 +38,33 @@ async def chat(
         tool_calls=state.tool_calls,
         tool_results=state.tool_results,
         requires_clarification=state.requires_clarification,
+    )
+
+
+@router.get(
+    "/chat/{conversation_id}",
+    response_model=ChatHistoryResponse,
+)
+async def get_chat_history(
+    conversation_id: UUID,
+    family_id: UUID,
+    session: AsyncSession = Depends(get_db),
+) -> ChatHistoryResponse:
+    service = ChatService(session)
+
+    messages = await service.get_history(
+        family_id=family_id,
+        conversation_id=conversation_id,
+    )
+
+    return ChatHistoryResponse(
+        conversation_id=conversation_id,
+       messages=[
+    ChatHistoryMessage(
+        id=message.id,
+        role=message.role,
+        content=message.content,
+    )
+    for message in messages
+],
     )

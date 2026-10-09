@@ -29,13 +29,16 @@ const priorityStyles: Record<Commitment["priority"], string> = {
 };
 
 export default function TimelinePage() {
-  const { selectedFamilyId } = useFamily();
+  const { selectedFamilyId, selectedMemberId, members } = useFamily();
 
   const [timeline, setTimeline] = useState<TimelineResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] =
-    useState<(typeof filters)[number]>("all");
+  const [filter, setFilter] = useState<(typeof filters)[number]>("all");
+
+  const selectedMember = members.find(
+    (member) => member.id === selectedMemberId,
+  );
 
   useEffect(() => {
     if (!selectedFamilyId) {
@@ -44,6 +47,8 @@ export default function TimelinePage() {
       return;
     }
 
+    let cancelled = false;
+
     const loadTimeline = async () => {
       try {
         setLoading(true);
@@ -51,29 +56,49 @@ export default function TimelinePage() {
 
         const data = await getTimeline(selectedFamilyId);
 
-        setTimeline(data);
+        if (!cancelled) {
+          setTimeline(data);
+        }
       } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Unable to load timeline.",
-        );
+        if (!cancelled) {
+          setError(
+            err instanceof Error ? err.message : "Unable to load timeline.",
+          );
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
-    loadTimeline();
+    void loadTimeline();
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedFamilyId]);
 
   const timelineItems = timeline?.items ?? [];
 
+  // Filter the timeline items based on the selected member and status filter.
+  // If no member is selected, show all items.
+  // If a member is selected, show only items for that member and shared items.
+ const memberItems = useMemo(
+  () =>
+    selectedMemberId
+      ? timelineItems.filter(
+          (item) => item.memberId === selectedMemberId,
+        )
+      : timelineItems,
+  [timelineItems, selectedMemberId],
+);
   const visibleItems = useMemo(
     () =>
       filter === "all"
-        ? timelineItems
-        : timelineItems.filter((item) => item.status === filter),
-    [filter, timelineItems],
+        ? memberItems
+        : memberItems.filter((item) => item.status === filter),
+    [filter, memberItems],
   );
 
   return (
@@ -84,12 +109,12 @@ export default function TimelinePage() {
             Family commitments
           </p>
 
-          <h1 className="text-3xl font-semibold text-slate-950">
-            Timeline
-          </h1>
+          <h1 className="text-3xl font-semibold text-slate-950">Timeline</h1>
 
           <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">
-            Keep the next important things visible.
+            {selectedMember
+              ? `Important commitments for ${selectedMember.name}, including shared commitments.`
+              : "Keep the next important things visible for your family."}
           </p>
         </div>
 
@@ -97,16 +122,12 @@ export default function TimelinePage() {
           <span className="font-semibold text-slate-950">
             {visibleItems.length}
           </span>{" "}
-          {visibleItems.length === 1
-            ? "commitment"
-            : "commitments"}
+          {visibleItems.length === 1 ? "commitment" : "commitments"}
         </p>
       </header>
 
       <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm font-medium text-slate-700">
-          Filter by status
-        </p>
+        <p className="text-sm font-medium text-slate-700">Filter by status</p>
 
         <div
           className="inline-flex w-fit max-w-full flex-wrap gap-1 rounded-md border border-slate-200 bg-white p-1"
@@ -116,10 +137,8 @@ export default function TimelinePage() {
           {filters.map((option) => {
             const count =
               option === "all"
-                ? timelineItems.length
-                : timelineItems.filter(
-                    (item) => item.status === option,
-                  ).length;
+                ? memberItems.length
+                : memberItems.filter((item) => item.status === option).length;
 
             const selected = filter === option;
 
@@ -137,11 +156,7 @@ export default function TimelinePage() {
               >
                 {option[0].toUpperCase() + option.slice(1)}{" "}
                 <span
-                  className={
-                    selected
-                      ? "text-slate-300"
-                      : "text-slate-400"
-                  }
+                  className={selected ? "text-slate-300" : "text-slate-400"}
                 >
                   {count}
                 </span>
@@ -161,9 +176,7 @@ export default function TimelinePage() {
       )}
 
       {loading ? (
-        <p className="mt-6 text-sm text-slate-500">
-          Loading timeline...
-        </p>
+        <p className="mt-6 text-sm text-slate-500">Loading timeline...</p>
       ) : visibleItems.length === 0 ? (
         <p className="mt-6 rounded-md border border-dashed border-slate-300 px-5 py-10 text-center text-sm text-slate-600">
           No commitments match this filter.
@@ -192,29 +205,19 @@ export default function TimelinePage() {
                 <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs font-medium text-slate-500">
                   {item.familyMember && (
                     <span className="inline-flex items-center gap-1.5">
-                      <UserRound
-                        aria-hidden="true"
-                        size={14}
-                      />
+                      <UserRound aria-hidden="true" size={14} />
                       {item.familyMember}
                     </span>
                   )}
 
                   <span className="inline-flex items-center gap-1.5">
-                    <CalendarDays
-                      aria-hidden="true"
-                      size={14}
-                    />
-
+                    <CalendarDays aria-hidden="true" size={14} />
                     Due{" "}
-                    {new Date(item.dueDate).toLocaleDateString(
-                      "en-IN",
-                      {
-                        day: "numeric",
-                        month: "short",
-                        year: "numeric",
-                      },
-                    )}
+                    {new Date(item.dueDate).toLocaleDateString("en-IN", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })}
                   </span>
                 </div>
               </div>
@@ -224,8 +227,7 @@ export default function TimelinePage() {
                   statusStyles[item.status]
                 }`}
               >
-                {item.status[0].toUpperCase() +
-                  item.status.slice(1)}
+                {item.status[0].toUpperCase() + item.status.slice(1)}
               </span>
 
               <span
@@ -233,8 +235,7 @@ export default function TimelinePage() {
                   priorityStyles[item.priority]
                 }`}
               >
-                {item.priority[0].toUpperCase() +
-                  item.priority.slice(1)}{" "}
+                {item.priority[0].toUpperCase() + item.priority.slice(1)}{" "}
                 priority
               </span>
             </article>

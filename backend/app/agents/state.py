@@ -8,7 +8,7 @@ class AgentState:
     """State maintained during one Family Context Agent interaction."""
 
     family_id: UUID
-    user_id: UUID | None
+    member_id: UUID | None
     conversation_id: UUID | None
 
     user_message: str

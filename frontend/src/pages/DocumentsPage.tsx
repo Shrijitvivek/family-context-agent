@@ -15,7 +15,7 @@ import {
 import { useFamily } from "../context/FamilyContext";
 
 export default function DocumentsPage() {
-  const { selectedFamilyId } = useFamily();
+  const { selectedFamilyId , selectedMemberId } = useFamily();
 
   const [documents, setDocuments] = useState<DocumentResponse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,7 +30,7 @@ export default function DocumentsPage() {
       try {
         setLoading(true);
         setError(null);
-        const data = await getDocuments(selectedFamilyId);
+        const data = await getDocuments(selectedFamilyId, selectedMemberId);
         setDocuments(data);
       } catch {
         setError("Unable to load documents. Please try again.");
@@ -40,7 +40,7 @@ export default function DocumentsPage() {
     };
 
     loadDocuments();
-  }, [selectedFamilyId]);
+  }, [selectedFamilyId, selectedMemberId]);
 
   return (
     <div>
@@ -74,9 +74,9 @@ export default function DocumentsPage() {
               setUploading(true);
               setError(null);
 
-              await uploadDocument(selectedFamilyId, file);
+              await uploadDocument(selectedFamilyId, file , selectedMemberId);
 
-              const data = await getDocuments(selectedFamilyId);
+              const data = await getDocuments(selectedFamilyId, selectedMemberId);
               setDocuments(data);
 
               event.target.value = "";
