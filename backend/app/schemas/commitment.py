@@ -192,6 +192,7 @@ class CommitmentUpdate(BaseModel):
     )
 
     due_date: date | None = None
+    title: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class CommitmentUpdateRequest(BaseModel):
