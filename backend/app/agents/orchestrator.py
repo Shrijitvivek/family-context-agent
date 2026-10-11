@@ -7,7 +7,11 @@ from app.agents.state import AgentState
 from app.clients.ai_model import AIModelClient
 from app.core.config import get_settings
 from app.tools.registry import ToolRegistry
-from app.utils.dates import resolve_expense_date
+from app.utils.dates import (
+    contains_relative_expense_date,
+    resolve_expense_date,
+    today_in,
+)
 
 
 _CONFIRMATION_REPLIES = {
@@ -82,10 +86,15 @@ class FamilyContextAgent:
         self.tool_registry = tool_registry
 
     async def run(self, state: AgentState) -> AgentState:
-        context_section = ""
+        current_date = today_in(get_settings().family_timezone).isoformat()
+        context_section = (
+            "\n\nAPPLICATION DATE CONTEXT\n"
+            f"Today is {current_date} in the family's configured timezone. "
+            "Yesterday and last day mean one calendar day before today."
+        )
 
         if state.household_context:
-            context_section = f"""
+            context_section += f"""
 
         CURRENT HOUSEHOLD CONTEXT
         =========================
@@ -201,9 +210,21 @@ class FamilyContextAgent:
                             get_settings().family_timezone,
                         )
                         arguments["expense_date"] = resolved_date.isoformat()
-                        # Tool arguments are model-proposed; the original user
-                        # message and application timezone determine the date.
-                        arguments["expense_date"] = resolved_date.isoformat()
+
+                    if tool_call.name == "get_expense_records":
+                        if state.member_id is not None:
+                            arguments["member_id"] = str(state.member_id)
+
+                    if (
+                        tool_call.name == "get_expense_records"
+                        and contains_relative_expense_date(state.user_message)
+                    ):
+                        resolved_date = resolve_expense_date(
+                            state.user_message,
+                            get_settings().family_timezone,
+                        )
+                        arguments["start_date"] = resolved_date.isoformat()
+                        arguments["end_date"] = resolved_date.isoformat()
 
                     result = await self.tool_registry.dispatch(
                         tool_call.name,

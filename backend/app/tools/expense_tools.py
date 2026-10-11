@@ -7,6 +7,8 @@ from typing import Literal
 from app.schemas.expense import (
     AddExpenseToolResult,
     ExpenseCreate,
+    ExpenseRecordsToolResult,
+    ExpenseRead,
     ExpenseSummaryQuery,
     ExpenseSummaryToolResult,
 )
@@ -64,3 +66,20 @@ async def get_expense_summary(
             f"across {summary.transaction_count} expense{plural}."
         )
     return ExpenseSummaryResult(**summary.model_dump(), message=message)
+
+
+async def get_expense_records(
+    service: ExpenseService, payload: ExpenseSummaryQuery
+) -> ExpenseRecordsToolResult:
+    """Find matching expense records with their stored bill details."""
+
+    expenses = await service.list_expenses(payload)
+    return ExpenseRecordsToolResult(
+        search_term=payload.search_term or payload.category or "all expenses",
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+        expenses=[
+            ExpenseRead.model_validate(expense, from_attributes=True)
+            for expense in expenses
+        ],
+    )

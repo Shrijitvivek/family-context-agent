@@ -3,7 +3,7 @@
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError, ScopeViolationError
@@ -42,10 +42,21 @@ class ExpenseRepository:
 
     @staticmethod
     def _filters(query: ExpenseSummaryQuery) -> list[ColumnElement[bool]]:
+        term = f"%{query.search_term}%" if query.search_term else None
+        search_filter = (
+            or_(
+                Expense.category.ilike(term),
+                Expense.merchant.ilike(term),
+                Expense.description.ilike(term),
+            )
+            if term is not None
+            else None
+        )
         return build_filters(
             Expense.family_id == query.family_id,
             Expense.member_id == query.member_id if query.member_id is not None else None,
             Expense.category == query.category if query.category is not None else None,
+            search_filter,
             Expense.expense_date >= query.start_date if query.start_date is not None else None,
             Expense.expense_date <= query.end_date if query.end_date is not None else None,
         )

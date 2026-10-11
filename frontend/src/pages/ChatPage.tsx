@@ -8,6 +8,7 @@ import {
   AlertCircle,
   UsersRound,
   User,
+  Trash2,
 } from "lucide-react";
 
 import PageHeader from "../components/ui/PageHeader";
@@ -25,8 +26,14 @@ export default function ChatPage() {
 
   const familyId = selectedFamilyId ?? "";
 
-  const { messages, loading, historyLoading, error, sendChatMessage } =
-    useChat(familyId, selectedMemberId);
+  const {
+    messages,
+    loading,
+    historyLoading,
+    error,
+    sendChatMessage,
+    clearChat,
+  } = useChat(familyId, selectedMemberId);
 
   const hasMessages = messages.length > 0;
 
@@ -62,6 +69,27 @@ export default function ChatPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            {hasMessages && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Clear this conversation from the screen? Stored messages will remain in the backend.",
+                    )
+                  ) {
+                    void clearChat();
+                  }
+                }}
+                disabled={loading || historyLoading}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="Clear conversation"
+              >
+                <Trash2 size={14} aria-hidden="true" />
+                <span className="hidden sm:inline">Clear chat</span>
+              </button>
+            )}
+
             {/* Member context indicator */}
             {selectedMemberId && (
               <span className="hidden items-center gap-1.5 rounded-full border border-violet-100 bg-violet-50/70 px-2.5 py-1 text-xs font-medium text-violet-700 sm:inline-flex">

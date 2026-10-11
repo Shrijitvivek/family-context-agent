@@ -59,12 +59,12 @@ async def get_chat_history(
 
     return ChatHistoryResponse(
         conversation_id=conversation_id,
-       messages=[
-    ChatHistoryMessage(
-        id=message.id,
-        role=message.role,
-        content=message.content,
-    )
-    for message in messages
-],
+        messages=[
+            ChatHistoryMessage(
+                id=message.id,
+                role=message.role,
+                content=message.content,
+            )
+            for message in messages
+        ],
     )

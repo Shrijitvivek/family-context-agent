@@ -41,7 +41,6 @@ export const sendMessage = async (
   const response = await apiClient.post<ChatResponse>("/chat", data);
   return response.data;
 };
-
 // Retrieve previous messages for a conversation
 export const getChatHistory = async (
   conversationId: string,

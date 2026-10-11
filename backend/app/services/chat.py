@@ -86,6 +86,7 @@ class ChatService:
             conversation_id,
             limit=100,
         )
+
     async def process_message(
         self,
         *,
