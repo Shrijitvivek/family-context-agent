@@ -164,7 +164,7 @@ async def _run_agent(message: str, history: list[dict[str, str]], monkeypatch):
     agent = FamilyContextAgent(FakeAIClient("2025-08-27"), registry)
     state = AgentState(
         family_id=uuid4(),
-        user_id=None,
+        member_id=None,
         conversation_id=uuid4(),
         user_message=message,
         history=history,

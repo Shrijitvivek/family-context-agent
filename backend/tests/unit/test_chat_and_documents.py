@@ -59,13 +59,15 @@ async def test_chat_service_process_message_persists_messages_and_agent_run_even
     service._conversation_repository = conversations
     service._document_repository = SimpleNamespace()
     service._context_service = SimpleNamespace(
-        build=lambda **_kwargs: _empty_async_result(None)
+        build=lambda **_kwargs: _empty_async_result(
+            SimpleNamespace(to_prompt=lambda: "Household context")
+        )
     )
     service._agent = FakeAgent()
     service._event_repository = events
 
     state = await service.process_message(
-        family_id=uuid4(), user_id=None, conversation_id=None, message="Spent 500 on food"
+        family_id=uuid4(), member_id=None, conversation_id=None, message="Spent 500 on food"
     )
 
     assert state.assistant_message == "I recorded the expense."
