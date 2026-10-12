@@ -51,7 +51,7 @@ async def test_agent_tool_flow_uses_registry_and_returns_tool_result() -> None:
     agent = FamilyContextAgent(ai, registry)  # type: ignore[arg-type]
     state = AgentState(
         family_id=family_id,
-        user_id=None,
+        member_id=None,
         conversation_id=None,
         user_message="I spent 850 on groceries on 2026-10-08",
     )

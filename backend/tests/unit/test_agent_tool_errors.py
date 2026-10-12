@@ -58,7 +58,7 @@ async def test_agent_run_records_tool_errors_and_keeps_conversation_flow(error) 
     agent = FamilyContextAgent(ai, registry)  # type: ignore[arg-type]
     state = AgentState(
         family_id=family_id,
-        user_id=uuid4(),
+        member_id=uuid4(),
         conversation_id=uuid4(),
         user_message="Add the electricity bill",
     )
@@ -86,7 +86,7 @@ async def test_agent_does_not_dispatch_when_ai_returns_no_tool_call() -> None:
     agent = FamilyContextAgent(NoToolAI(), registry)  # type: ignore[arg-type]
     state = AgentState(
         family_id=uuid4(),
-        user_id=None,
+        member_id=None,
         conversation_id=None,
         user_message="Add that bill",
     )
