@@ -49,6 +49,7 @@ class ExpenseRead(BaseModel):
     id: UUID
     family_id: UUID
     member_id: UUID | None
+    member_name: str | None = None 
     amount: Decimal
     category: str
     merchant: str | None
