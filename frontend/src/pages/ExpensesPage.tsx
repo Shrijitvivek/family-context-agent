@@ -271,7 +271,19 @@ export default function ExpensesPage() {
             )
           : expenseData;
 
-        setExpenses(visibleExpenses);
+        const memberNamesById = new Map(
+          members.map((member) => [member.id, member.name]),
+        );
+
+        setExpenses(
+          visibleExpenses.map((expense) => ({
+            ...expense,
+            family_member: expense.member_id
+              ? memberNamesById.get(expense.member_id) ?? undefined
+              : undefined,
+          })),
+        );
+
         setTotal(Number(summary.total));
       } catch (err) {
         if (cancelled) return;
@@ -293,7 +305,7 @@ export default function ExpensesPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedFamilyId, selectedMemberId, retryCount]);
+  }, [selectedFamilyId, selectedMemberId, retryCount, members]);
 
   const currency = new Intl.NumberFormat("en-IN", {
     style: "currency",
