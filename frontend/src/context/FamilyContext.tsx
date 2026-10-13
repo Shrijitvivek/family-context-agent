@@ -40,9 +40,10 @@ const getMemberStorageKey = (familyId: string) =>
 
 export function FamilyProvider({ children }: FamilyProviderProps) {
   const [families, setFamilies] = useState<Family[]>([]);
-  const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(
-    null,
-  );
+  const [selectedFamilyId, setSelectedFamilyIdState] =
+    useState<string | null>(() => {
+      return localStorage.getItem("selectedFamilyId");
+  });
 
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(
@@ -52,19 +53,40 @@ export function FamilyProvider({ children }: FamilyProviderProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const handleSetSelectedFamilyId = (familyId: string) => {
+    setSelectedFamilyIdState(familyId);
+    localStorage.setItem("selected_family_id", familyId);
+  };
+
   useEffect(() => {
     const loadFamilies = async () => {
       try {
+        
         const data = await getFamilies();
         setFamilies(data);
 
-        const demoFamilyId = localStorage.getItem("demo_family_id");
+        const savedFamilyId = localStorage.getItem("selected_family_id");
+        const savedFamilyExists = data.some(
+          (family) => family.id === savedFamilyId
+        );
 
-        if (demoFamilyId && data.some((family) => family.id === demoFamilyId)) {
-          setSelectedFamilyId(demoFamilyId);
-        } else if (data.length > 0) {
-          setSelectedFamilyId(data[0].id);
+        const demoFamilyId = localStorage.getItem("demo_family_id");
+        const demoFamilyExists = data.some(
+          (family) => family.id === demoFamilyId
+        );
+
+        const familyToSelect =
+          savedFamilyId && savedFamilyExists
+            ? savedFamilyId
+            : demoFamilyId && demoFamilyExists
+              ? demoFamilyId
+              : data[0]?.id ?? null;
+
+        if (familyToSelect) {
+          setSelectedFamilyIdState(familyToSelect);
+          localStorage.setItem("selected_family_id", familyToSelect);
         }
+
       } catch {
         setError("Unable to load families.");
       } finally {
@@ -140,7 +162,7 @@ export function FamilyProvider({ children }: FamilyProviderProps) {
       value={{
         families,
         selectedFamilyId,
-        setSelectedFamilyId,
+        setSelectedFamilyId: handleSetSelectedFamilyId,
         members,
         selectedMemberId,
         setSelectedMemberId: handleSetSelectedMemberId,
