@@ -1,14 +1,8 @@
 /**
- * Navigation
+ * Navigation.tsx
  *
  * Provides the main navigation links for the Family Context application.
- * It connects users to the main product areas and utility tools like Judge Mode.
- *
- * Responsibilities:
- * - Display grouped navigation sections with icons and descriptions.
- * - Highlight the currently active route with visual indicators.
- * - Provide keyboard and screen-reader accessible navigation.
- * - Reuse seamlessly across desktop and mobile layouts.
+ * Updated with optimized compact sizing and clean line heights.
  */
 
 import { NavLink } from "react-router-dom";
@@ -39,18 +33,18 @@ export default function Navigation() {
   return (
     <nav
       aria-label="Main navigation"
-      className="flex flex-col gap-6 rounded-2xl bg-violet-50/70 p-3"
+      className="flex flex-col gap-4 rounded-2xl border border-slate-200/80 bg-white p-2.5 shadow-[0_2px_8px_rgba(15,23,42,0.025)]"
     >
       {/* Main navigation */}
       <section aria-labelledby="navigation-main-heading">
         <h2
           id="navigation-main-heading"
-          className="mb-2.5 px-3 text-[10px] font-semibold uppercase tracking-[0.15em] text-violet-400"
+          className="mb-2 px-2.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400"
         >
           Main menu
         </h2>
 
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-0.5">
           {navigationItems.map(({ name, path, icon: Icon, description }) => (
             <NavLink
               key={path}
@@ -60,12 +54,12 @@ export default function Navigation() {
               aria-label={name}
               className={({ isActive }) =>
                 [
-                  "group relative flex min-h-11 items-center gap-3 rounded-xl px-3.5 py-2.5",
-                  "text-sm font-medium transition-all duration-200 ease-out",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2",
+                  "group relative flex min-h-9 items-center gap-2.5 rounded-xl px-3 py-2",
+                  "text-xs font-medium leading-relaxed transition-all duration-200 ease-out",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2",
                   isActive
-                    ? "bg-violet-100 text-violet-900 shadow-sm ring-1 ring-inset ring-violet-200"
-                    : "text-slate-600 hover:bg-white/80 hover:text-violet-900",
+                    ? "bg-slate-100/80 text-slate-950 font-semibold shadow-xs"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-950",
                 ].join(" ")
               }
             >
@@ -74,21 +68,21 @@ export default function Navigation() {
                   {isActive && (
                     <span
                       aria-hidden="true"
-                      className="absolute bottom-2.5 left-0 top-2.5 w-[3px] rounded-r-full bg-violet-500"
+                      className="absolute bottom-2 left-0 top-2 w-[3px] rounded-r-full bg-slate-900"
                     />
                   )}
 
                   <span
                     className={[
-                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors duration-200",
+                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors duration-200",
                       isActive
-                        ? "bg-white text-violet-700"
-                        : "text-slate-500 group-hover:bg-white group-hover:text-violet-700",
+                        ? "bg-slate-900 text-white shadow-xs"
+                        : "bg-slate-100 text-slate-500 group-hover:bg-slate-200 group-hover:text-slate-900",
                     ].join(" ")}
                   >
                     <Icon
-                      size={19}
-                      strokeWidth={isActive ? 2.1 : 1.8}
+                      size={16}
+                      strokeWidth={isActive ? 2.2 : 1.8}
                       aria-hidden="true"
                     />
                   </span>
@@ -97,10 +91,10 @@ export default function Navigation() {
 
                   {isActive && (
                     <ChevronRight
-                      size={15}
-                      strokeWidth={2}
+                      size={14}
+                      strokeWidth={2.2}
                       aria-hidden="true"
-                      className="shrink-0 text-violet-600"
+                      className="shrink-0 text-slate-900"
                     />
                   )}
                 </>
@@ -114,12 +108,12 @@ export default function Navigation() {
       <section aria-labelledby="navigation-tools-heading">
         <h2
           id="navigation-tools-heading"
-          className="mb-2.5 px-3 text-[10px] font-semibold uppercase tracking-[0.15em] text-violet-400"
+          className="mb-2 px-2.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400"
         >
           Tools
         </h2>
 
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-0.5">
           {utilityItems.map(({ name, path, icon: Icon, description }) => (
             <NavLink
               key={path}
@@ -127,12 +121,12 @@ export default function Navigation() {
               title={description}
               className={({ isActive }) =>
                 [
-                  "group relative flex min-h-11 items-center gap-3 rounded-xl px-3.5 py-2.5",
-                  "text-sm font-medium transition-all duration-200 ease-out",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2",
+                  "group relative flex min-h-9 items-center gap-2.5 rounded-xl px-3 py-2",
+                  "text-xs font-medium leading-relaxed transition-all duration-200 ease-out",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2",
                   isActive
-                    ? "bg-violet-100 text-violet-900 shadow-sm ring-1 ring-inset ring-violet-200"
-                    : "text-slate-600 hover:bg-white/80 hover:text-violet-900",
+                    ? "bg-slate-100/80 text-slate-950 font-semibold shadow-xs"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-950",
                 ].join(" ")
               }
             >
@@ -141,21 +135,21 @@ export default function Navigation() {
                   {isActive && (
                     <span
                       aria-hidden="true"
-                      className="absolute bottom-2.5 left-0 top-2.5 w-[3px] rounded-r-full bg-violet-500"
+                      className="absolute bottom-2 left-0 top-2 w-[3px] rounded-r-full bg-slate-900"
                     />
                   )}
 
                   <span
                     className={[
-                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors duration-200",
+                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors duration-200",
                       isActive
-                        ? "bg-white text-violet-700"
-                        : "text-slate-500 group-hover:bg-white group-hover:text-violet-700",
+                        ? "bg-slate-900 text-white shadow-xs"
+                        : "bg-slate-100 text-slate-500 group-hover:bg-slate-200 group-hover:text-slate-900",
                     ].join(" ")}
                   >
                     <Icon
-                      size={19}
-                      strokeWidth={isActive ? 2.1 : 1.8}
+                      size={16}
+                      strokeWidth={isActive ? 2.2 : 1.8}
                       aria-hidden="true"
                     />
                   </span>
@@ -167,11 +161,11 @@ export default function Navigation() {
                       "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5",
                       "text-[9px] font-semibold uppercase tracking-wide transition-colors duration-200",
                       isActive
-                        ? "border-violet-200 bg-white text-violet-700"
-                        : "border-violet-100 bg-white/80 text-violet-500",
+                        ? "border-slate-300 bg-white text-slate-900 shadow-xs"
+                        : "border-slate-200 bg-slate-50 text-slate-500 group-hover:border-slate-300 group-hover:text-slate-700",
                     ].join(" ")}
                   >
-                    <Sparkles size={10} aria-hidden="true" />
+                    <Sparkles size={9} aria-hidden="true" />
                     Demo
                   </span>
                 </>
@@ -184,7 +178,7 @@ export default function Navigation() {
       {/* Bottom divider */}
       <div
         aria-hidden="true"
-        className="h-px bg-gradient-to-r from-transparent via-violet-200 to-transparent"
+        className="h-px bg-slate-100 my-0.5"
       />
     </nav>
   );

@@ -43,6 +43,7 @@ export async function getExpenses(
       description: string | null;
       expense_date: string;
       member_id: string | null;
+      member_name?: string | null;
     }>
   >("/expenses", {
     params: {

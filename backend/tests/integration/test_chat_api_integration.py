@@ -19,7 +19,7 @@ class FakeChatService:
         type(self).received = kwargs
         state = AgentState(
             family_id=kwargs["family_id"],
-            user_id=kwargs["user_id"],
+            member_id=kwargs["member_id"],
             conversation_id=kwargs["conversation_id"] or uuid4(),
             user_message=kwargs["message"],
         )
@@ -53,7 +53,7 @@ async def test_chat_api_routes_to_current_chat_service_interface(monkeypatch) ->
         assert body["tool_results"][0]["result"]["success"] is True
         assert FakeChatService.received == {
             "family_id": family_id,
-            "user_id": None,
+            "member_id": None,
             "conversation_id": None,
             "message": "I spent 120 on transport",
             "document_id": None,

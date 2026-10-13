@@ -199,9 +199,12 @@ class FamilyContextAgent:
             for tool_call in response.tool_calls:
                 arguments = dict(tool_call.arguments)
 
-                # family_id is application context.
-                # The user does not need to provide it.
+                # Application-owned context
                 arguments["family_id"] = str(state.family_id)
+
+                if tool_call.name in {"add_expense", "create_commitment"}:
+                    if state.member_id is not None:
+                        arguments["member_id"] = str(state.member_id)
 
                 try:
                     if tool_call.name == "add_expense":
