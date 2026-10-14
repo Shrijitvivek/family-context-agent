@@ -38,7 +38,11 @@ from app.tools.commitment_tools import update_commitment
 TODAY = date(2026, 10, 13)
 
 
-def _commitment_payload(family_id: UUID, title: str, due_date: date | None):
+def _commitment_payload(
+    family_id: UUID,
+    title: str,
+    due_date: date | None,
+) -> CommitmentCreate:
     return CommitmentCreate(
         family_id=family_id,
         commitment_type=CommitmentType.TASK,
@@ -59,7 +63,10 @@ async def _delete_families(session, family_ids: list[UUID]) -> None:
     await session.commit()
 
 
-def _priority_service(session, repository: CommitmentRepository) -> PriorityService:
+def _priority_service(
+    session,
+    repository: CommitmentRepository,
+) -> PriorityService:
     return PriorityService(
         repository,
         NotificationService(NotificationRepository(session)),
@@ -69,9 +76,16 @@ def _priority_service(session, repository: CommitmentRepository) -> PriorityServ
 @pytest.mark.asyncio(loop_scope="session")
 async def test_postgres_dependencies_drive_multi_prerequisite_attention_lifecycle() -> None:
     family_id = uuid4()
+
     async with AsyncSessionLocal() as session:
-        session.add(Family(id=family_id, name="Dependency Priority Integration Family"))
+        session.add(
+            Family(
+                id=family_id,
+                name="Dependency Priority Integration Family",
+            )
+        )
         await session.flush()
+
         repository = CommitmentRepository(session)
         commitments = CommitmentService(repository)
         priorities = _priority_service(session, repository)
@@ -81,10 +95,18 @@ async def test_postgres_dependencies_drive_multi_prerequisite_attention_lifecycl
                 _commitment_payload(family_id, "CBC Test", None)
             )
             prerequisite_b = await commitments.create(
-                _commitment_payload(family_id, "Blood Pressure Review", None)
+                _commitment_payload(
+                    family_id,
+                    "Blood Pressure Review",
+                    None,
+                )
             )
             target = await commitments.create(
-                _commitment_payload(family_id, "Doctor Review", date(2026, 10, 16))
+                _commitment_payload(
+                    family_id,
+                    "Doctor Review",
+                    date(2026, 10, 16),
+                )
             )
 
             edge_a = await commitments.create_dependency(
@@ -131,18 +153,22 @@ async def test_postgres_dependencies_drive_multi_prerequisite_attention_lifecycl
 
             recalculated = await priorities.recalculate(family_id, TODAY)
             assert recalculated.active_items == 3
+
             active = await priorities.attention_items(family_id)
             warnings = [
                 item
                 for item in active
-                if item.notification_type == NotificationType.DEPENDENCY_WARNING
+                if item.notification_type
+                == NotificationType.DEPENDENCY_WARNING
             ]
+
             assert {item.commitment_id for item in warnings} == {
                 prerequisite_a.id,
                 prerequisite_b.id,
             }
             assert all(item.priority == Priority.HIGH for item in warnings)
             assert all("Doctor Review" in item.message for item in warnings)
+
             # The near due date keeps the target itself in attention as well.
             assert any(
                 item.commitment_id == target.id
@@ -158,18 +184,27 @@ async def test_postgres_dependencies_drive_multi_prerequisite_attention_lifecycl
                     status=CommitmentStatus.COMPLETED,
                 ),
             )
+
             after_completion = await priorities.recalculate(family_id, TODAY)
             assert after_completion.active_items == 2
-            active_after_completion = await priorities.attention_items(family_id)
+
+            active_after_completion = await priorities.attention_items(
+                family_id
+            )
             remaining_warnings = [
                 item
                 for item in active_after_completion
-                if item.notification_type == NotificationType.DEPENDENCY_WARNING
+                if item.notification_type
+                == NotificationType.DEPENDENCY_WARNING
             ]
+
             assert [item.commitment_id for item in remaining_warnings] == [
                 prerequisite_b.id
             ]
-            assert all("Doctor Review" in item.message for item in remaining_warnings)
+            assert all(
+                "Doctor Review" in item.message
+                for item in remaining_warnings
+            )
 
             all_notifications = list(
                 (
@@ -181,13 +216,17 @@ async def test_postgres_dependencies_drive_multi_prerequisite_attention_lifecycl
                 ).all()
             )
             assert len(all_notifications) == 3
+
             resolved_a_warning = next(
                 item
                 for item in all_notifications
                 if item.commitment_id == prerequisite_a.id
-                and item.notification_type == NotificationType.DEPENDENCY_WARNING.value
+                and item.notification_type
+                == NotificationType.DEPENDENCY_WARNING.value
             )
-            assert resolved_a_warning.status == NotificationStatus.RESOLVED.value
+            assert (
+                resolved_a_warning.status == NotificationStatus.RESOLVED.value
+            )
             assert resolved_a_warning.resolved_at is not None
 
             # Repeating the same dependency is rejected and does not add a row.
@@ -200,12 +239,14 @@ async def test_postgres_dependencies_drive_multi_prerequisite_attention_lifecycl
                         relationship_type="MUST_COMPLETE_BEFORE",
                     )
                 )
+
             edge_count = await session.scalar(
                 select(func.count(CommitmentDependency.id)).where(
                     CommitmentDependency.family_id == family_id
                 )
             )
             assert edge_count == 2
+
             commitment_count = await session.scalar(
                 select(func.count(Commitment.id)).where(
                     Commitment.family_id == family_id
@@ -219,6 +260,7 @@ async def test_postgres_dependencies_drive_multi_prerequisite_attention_lifecycl
 @pytest.mark.asyncio(loop_scope="session")
 async def test_dependency_rejects_cross_family_missing_and_self_references() -> None:
     family_a_id, family_b_id = uuid4(), uuid4()
+
     async with AsyncSessionLocal() as session:
         session.add_all(
             [
@@ -227,18 +269,31 @@ async def test_dependency_rejects_cross_family_missing_and_self_references() -> 
             ]
         )
         await session.flush()
+
         repository = CommitmentRepository(session)
         commitments = CommitmentService(repository)
 
         try:
             a_source = await commitments.create(
-                _commitment_payload(family_a_id, "Family A prerequisite", None)
+                _commitment_payload(
+                    family_a_id,
+                    "Family A prerequisite",
+                    None,
+                )
             )
             a_target = await commitments.create(
-                _commitment_payload(family_a_id, "Family A target", date(2026, 10, 16))
+                _commitment_payload(
+                    family_a_id,
+                    "Family A target",
+                    date(2026, 10, 16),
+                )
             )
             b_target = await commitments.create(
-                _commitment_payload(family_b_id, "Family B target", date(2026, 10, 16))
+                _commitment_payload(
+                    family_b_id,
+                    "Family B target",
+                    date(2026, 10, 16),
+                )
             )
 
             valid = await commitments.create_dependency(
@@ -262,6 +317,7 @@ async def test_dependency_rejects_cross_family_missing_and_self_references() -> 
                 )
 
             missing_id = uuid4()
+
             with pytest.raises(NotFoundError):
                 await commitments.create_dependency(
                     CommitmentDependencyCreate(
@@ -271,6 +327,7 @@ async def test_dependency_rejects_cross_family_missing_and_self_references() -> 
                         relationship_type="MUST_COMPLETE_BEFORE",
                     )
                 )
+
             with pytest.raises(NotFoundError):
                 await commitments.create_dependency(
                     CommitmentDependencyCreate(
@@ -289,37 +346,70 @@ async def test_dependency_rejects_cross_family_missing_and_self_references() -> 
                     relationship_type="MUST_COMPLETE_BEFORE",
                 )
 
-            family_a_edges = await repository.list_dependency_edges(family_a_id)
-            family_b_edges = await repository.list_dependency_edges(family_b_id)
+            family_a_edges = await repository.list_dependency_edges(
+                family_a_id
+            )
+            family_b_edges = await repository.list_dependency_edges(
+                family_b_id
+            )
             assert family_a_edges == [(a_source.id, a_target.id)]
             assert family_b_edges == []
+
             count = await session.scalar(
                 select(func.count(CommitmentDependency.id)).where(
-                    CommitmentDependency.family_id.in_([family_a_id, family_b_id])
+                    CommitmentDependency.family_id.in_(
+                        [family_a_id, family_b_id]
+                    )
                 )
             )
             assert count == 1
         finally:
-            await _delete_families(session, [family_a_id, family_b_id])
+            await _delete_families(
+                session,
+                [family_a_id, family_b_id],
+            )
 
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_completing_prerequisite_does_not_leave_stale_attention() -> None:
     family_id = uuid4()
+
     async with AsyncSessionLocal() as session:
-        session.add(Family(id=family_id, name="Completion Attention Integration Family"))
+        session.add(
+            Family(
+                id=family_id,
+                name="Completion Attention Integration Family",
+            )
+        )
         await session.flush()
+
         repository = CommitmentRepository(session)
-        commitments = CommitmentService(repository)
         priorities = _priority_service(session, repository)
+
+        async def refresh_priorities(family_id: UUID) -> None:
+            await priorities.recalculate(family_id, TODAY)
+
+        commitments = CommitmentService(
+            repository,
+            on_change=refresh_priorities,
+        )
 
         try:
             prerequisite = await commitments.create(
-                _commitment_payload(family_id, "Stale Check Prerequisite", None)
+                _commitment_payload(
+                    family_id,
+                    "Stale Check Prerequisite",
+                    None,
+                )
             )
             target = await commitments.create(
-                _commitment_payload(family_id, "Stale Check Appointment", date(2026, 10, 16))
+                _commitment_payload(
+                    family_id,
+                    "Stale Check Appointment",
+                    date(2026, 10, 16),
+                )
             )
+
             await commitments.create_dependency(
                 CommitmentDependencyCreate(
                     family_id=family_id,
@@ -328,6 +418,7 @@ async def test_completing_prerequisite_does_not_leave_stale_attention() -> None:
                     relationship_type="MUST_COMPLETE_BEFORE",
                 )
             )
+
             await priorities.recalculate(family_id, TODAY)
 
             await update_commitment(
@@ -339,12 +430,13 @@ async def test_completing_prerequisite_does_not_leave_stale_attention() -> None:
                 ),
             )
 
-            # Completion is expected to update attention as described by the
-            # design flow; this service is constructed the same way as the API.
-            active_after_completion = await priorities.attention_items(family_id)
+            active_after_completion = await priorities.attention_items(
+                family_id
+            )
             assert not any(
                 item.commitment_id == prerequisite.id
-                and item.notification_type == NotificationType.DEPENDENCY_WARNING
+                and item.notification_type
+                == NotificationType.DEPENDENCY_WARNING
                 for item in active_after_completion
             )
         finally:

@@ -15,12 +15,9 @@ from app.repositories.expense import ExpenseRepository
 from app.services.commitment import CommitmentService
 from app.services.expense import ExpenseService
 from app.tools.registry import ToolRegistry
-
-
-class EmptyPriorityService:
-    async def attention_items(self, family_id):
-        return []
-
+from app.repositories.notification import NotificationRepository
+from app.services.notification import NotificationService
+from app.services.priority import PriorityService
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_all_seven_tools_with_postgres():
@@ -73,7 +70,10 @@ async def test_all_seven_tools_with_postgres():
         registry = ToolRegistry(
             expense_service=expense_service,
             commitment_service=commitment_service,
-            priority_service=EmptyPriorityService(),  # type: ignore[arg-type]
+            priority_service = PriorityService(
+                commitment_repository,
+                NotificationService(NotificationRepository(session)),
+            )
         )
 
         # ============================================================
@@ -343,6 +343,7 @@ async def test_all_seven_tools_with_postgres():
 
         assert priority_result["success"] is True
         assert "items" in priority_result
+        assert priority_result["count"] == len(priority_result["items"])
         assert isinstance(priority_result["items"], list)
 
         # ============================================================

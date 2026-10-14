@@ -279,10 +279,23 @@ or ask the user for clarification.
 
                 # Execute the tool after validation.
                 try:
-                    result = await self.tool_registry.dispatch(
-                        tool_call.name,
-                        arguments,
+                    execute = getattr(
+                        self.tool_registry,
+                        "execute",
+                        None,
                     )
+
+                    if callable(execute):
+                        result = await execute(
+                            tool_call.name,
+                            arguments,
+                        ) # type: ignore
+                    else:
+                        result = await self.tool_registry.dispatch(
+                            tool_call.name,
+                            arguments,
+                        )
+
                 except Exception as exc:
                     result = {
                         "success": False,
