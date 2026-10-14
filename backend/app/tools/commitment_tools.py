@@ -150,7 +150,7 @@ class SearchCommitmentsResult(SearchCommitmentsToolResult):
 
 class UpdateCommitmentResult(UpdateCommitmentToolResult):
     title: str
-    priority: Priority
+    priority: Priority | None
     amount: Decimal | None
     previous_amount: Decimal | None
     due_date: date | None
@@ -259,7 +259,7 @@ async def _reject_similar_commitments(
 
     error.details["next_step"] = (
         "Ask the user whether this is the existing item. If they are correcting it, "
-        "use update_commitment on that commitment_id (amount, due_date, priority, "
+        "use update_commitment on that commitment_id (amount, due_date, "
         "or status). If it is a separate item, call create_commitment again with "
         "confirmed_new=true."
     )
@@ -428,7 +428,7 @@ def _check_status_change(
     requested: CommitmentStatus,
 ) -> None:
     if requested == CommitmentStatus.OVERDUE:
-        # Overdue is derived from the due date by the priority engine.
+        # Overdue is derived from the due date by the scheduled backend check.
         raise InvalidStatusTransitionError(
             current.value,
             requested.value,
@@ -452,19 +452,17 @@ async def update_commitment(
     if (
         payload.title is None
         and payload.status is None
-        and payload.priority is None
         and payload.amount is None
         and payload.due_date is None
     ):
         raise ToolInputValidationError(
             "Nothing to update. Ask the user what should change: "
-            "title, amount, status, priority, or due date.",
+            "title, amount, status, or due date.",
             details={
                 "tool_name": "update_commitment",
                 "missing_fields": [
                     "title",
                     "status",
-                    "priority",
                     "amount",
                     "due_date",
                 ],
@@ -546,15 +544,6 @@ async def update_commitment(
             f"status {previous_status.value} -> {status.value}"
         )
 
-    # Priority change detection.
-    if (
-        payload.priority is not None
-        and payload.priority.value != current.priority
-    ):
-        changes.append(
-            f"priority {current.priority} -> {payload.priority.value}"
-        )
-
     # Amount change detection.
     if (
         payload.amount is not None
@@ -595,7 +584,7 @@ async def update_commitment(
         commitment_id=commitment.id,
         status=CommitmentStatus(commitment.status),
         title=commitment.title,
-        priority=Priority(commitment.priority),
+        priority=Priority(commitment.priority) if commitment.priority else None,
         amount=commitment.amount,
         previous_amount=previous_amount,
         due_date=commitment.due_date,

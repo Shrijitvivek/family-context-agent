@@ -178,8 +178,8 @@ COMMITMENT UPDATE RULES:
 
 - For status changes, report the final status.
 
-- For priority changes or recalculated priority, report the final
-  priority.
+- Report automatically calculated priority when it is relevant. Do not ask the
+  user to select or change priority.
 
 - Do not expose internal tool arguments, database details,
   commitment IDs, or family IDs.
@@ -424,7 +424,7 @@ Response:
 | **get_expense_summary** | Calculate household expense totals for a category or date range |
 | **create_commitment** | Create a household bill, task, appointment, test, or deadline |
 | **search_commitments** | Search existing family commitments using specific filters |
-| **update_commitment** | Complete, cancel, reprioritise, or reschedule an existing commitment |
+| **update_commitment** | Complete, cancel, or reschedule an existing commitment |
 | **create_dependency** | Record that one commitment must be completed before another |
 | **get_family_priorities** | Show overdue items, upcoming items, and unfinished prerequisites |
 

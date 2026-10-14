@@ -61,11 +61,11 @@ describe("HomePage backend data", () => {
     api.getDocuments.mockResolvedValue([]);
   });
 
-  it("requests dashboard data for the selected family", async () => {
+  it("requests dashboard data for the selected family without loading priorities", async () => {
     render(<HomePage />);
 
     await waitFor(() => {
-      expect(api.getPriorities).toHaveBeenCalledWith("family-1");
+      expect(api.getPriorities).not.toHaveBeenCalled();
       expect(api.getUpcomingCommitments).toHaveBeenCalledWith("family-1", null);
       expect(api.getExpenseSummary).toHaveBeenCalledWith("family-1", null);
       expect(api.getExpenses).toHaveBeenCalledWith("family-1", null);
@@ -75,12 +75,12 @@ describe("HomePage backend data", () => {
     expect(await screen.findByText("Backend grocery expense")).toBeTruthy();
   });
 
-  it("renders commitment and priority entries returned by the backend", async () => {
+  it("renders commitments without displaying dynamically updated priorities", async () => {
     render(<HomePage />);
 
     await screen.findByText("₹3,240.00");
     expect.soft(screen.queryByText("Backend electricity commitment")).toBeTruthy();
-    expect.soft(screen.queryByText("Backend attention item")).toBeTruthy();
+    expect.soft(screen.queryByText("Backend attention item")).toBeNull();
   });
 
   it("shows the runtime date and highlights its calendar day", async () => {
@@ -115,10 +115,10 @@ describe("HomePage backend data", () => {
   });
 
   it("shows a visible error when a dashboard request fails", async () => {
-    api.getPriorities.mockRejectedValue(new Error("Backend unavailable"));
+    api.getUpcomingCommitments.mockRejectedValue(new Error("Backend unavailable"));
     render(<HomePage />);
 
-    await waitFor(() => expect(api.getPriorities).toHaveBeenCalled());
+    await waitFor(() => expect(api.getUpcomingCommitments).toHaveBeenCalled());
     expect(await screen.findByRole("alert")).toBeTruthy();
   });
 
@@ -131,10 +131,10 @@ describe("HomePage backend data", () => {
       selectedMemberId: null,
       members: [],
     });
-    api.getPriorities.mockRejectedValueOnce(new Error("Backend unavailable"));
+    api.getUpcomingCommitments.mockRejectedValueOnce(new Error("Backend unavailable"));
     rerender(<HomePage />);
 
-    await waitFor(() => expect(api.getPriorities).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(api.getUpcomingCommitments).toHaveBeenCalledTimes(2));
     expect(screen.queryByText("Backend grocery expense")).toBeNull();
   });
 });

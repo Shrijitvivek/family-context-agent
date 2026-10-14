@@ -19,7 +19,7 @@ from app.schemas.commitment import (
     SearchCommitmentsQuery,
 )
 from app.services.dependency import DependencyService
-from app.services.priority import PriorityRefresher
+from app.services.priority import PriorityRefresher, priority_floor_for_status
 
 
 class CommitmentService:
@@ -74,6 +74,7 @@ class CommitmentService:
                 ]
             )
 
+        initial_priority = priority_floor_for_status(payload.status.value)
         commitment = Commitment(
             family_id=payload.family_id,
             member_id=payload.member_id,
@@ -85,7 +86,7 @@ class CommitmentService:
             start_date=payload.start_date,
             due_date=payload.due_date,
             status=payload.status.value,
-            priority=payload.priority.value,
+            priority=initial_priority.value if initial_priority else None,
             source_type=payload.source_type.value,
             document_id=payload.document_id,
         )

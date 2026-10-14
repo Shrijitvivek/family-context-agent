@@ -7,7 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.constants import CommitmentType, DocumentStatus, Priority
+from app.core.constants import CommitmentType, DocumentStatus
 
 
 class ExtractedFields(BaseModel):
@@ -61,4 +61,3 @@ class DocumentConfirm(BaseModel):
     amount: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
     start_date: date | None = None
     due_date: date | None = None
-    priority: Priority = Priority.MEDIUM

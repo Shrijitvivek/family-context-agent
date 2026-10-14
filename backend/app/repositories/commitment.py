@@ -194,9 +194,7 @@ class CommitmentRepository:
 
             if payload.status.value in ("COMPLETED", "CANCELLED"):
                 commitment.completed_at = func.now()
-
-        if payload.priority is not None:
-            commitment.priority = payload.priority.value
+                commitment.priority = None
 
         if payload.amount is not None:
             commitment.amount = payload.amount

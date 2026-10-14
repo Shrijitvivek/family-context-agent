@@ -1,8 +1,7 @@
 """Deterministic priority engine.
 
-Priorities come from dates, statuses, and dependencies only; the AI model is never
-consulted. The commitment's stored ``priority`` is the user's baseline and is not
-overwritten. The engine's *effective* priority is written to the notification.
+Priorities come from dates and statuses only; the AI model is never consulted.
+Terminal commitments have no priority.
 """
 
 from collections.abc import Awaitable, Callable, Iterable
@@ -34,6 +33,23 @@ DUE_SOON_DAYS = 3
 DEPENDENCY_HORIZON_DAYS = 7
 
 _RANK = {Priority.LOW: 0, Priority.MEDIUM: 1, Priority.HIGH: 2, Priority.CRITICAL: 3}
+_STATUS_PRIORITY: dict[str, Priority | None] = {
+    CommitmentStatus.SCHEDULED.value: Priority.LOW,
+    CommitmentStatus.PENDING.value: Priority.MEDIUM,
+    CommitmentStatus.IN_PROGRESS.value: Priority.HIGH,
+    CommitmentStatus.OVERDUE.value: Priority.CRITICAL,
+    CommitmentStatus.COMPLETED.value: None,
+    CommitmentStatus.CANCELLED.value: None,
+}
+
+
+def priority_floor_for_status(status: str) -> Priority | None:
+    return _STATUS_PRIORITY[status]
+
+
+def _active_priority(commitment: Commitment) -> Priority:
+    value = commitment.priority or priority_floor_for_status(commitment.status)
+    return Priority(value or Priority.LOW)
 
 
 def _max_priority(*values: Priority) -> Priority:
@@ -94,7 +110,10 @@ def assess(
                 Assessment(
                     c.id,
                     NotificationType.DUE_SOON,
-                    _max_priority(Priority(c.priority), Priority.HIGH),
+                    _max_priority(
+                        _active_priority(c),
+                        Priority.HIGH,
+                    ),
                     f"{c.title} is {when}",
                     f"{c.title} is {when} ({c.due_date.isoformat()}).",
                 )
@@ -115,7 +134,7 @@ def assess(
                 source.id,
                 NotificationType.DEPENDENCY_WARNING,
                 _max_priority(
-                    Priority(source.priority),
+                    _active_priority(source),
                     date_priority(source.due_date, today),
                     date_priority(target.due_date, today),
                 ),
@@ -146,17 +165,45 @@ class PriorityService:
         commitments = await self._commitments.search(SearchCommitmentsQuery(family_id=family_id))
         edges = await self._commitments.list_dependency_edges(family_id)
 
-        marked_overdue = reopened = 0
+        marked_overdue = reopened = started = 0
         for c in commitments:
-            if c.due_date is None or c.status not in ACTIVE_COMMITMENT_STATUSES:
-                continue
-            is_past = c.due_date < today
-            if is_past and c.status != CommitmentStatus.OVERDUE:
-                c.status = CommitmentStatus.OVERDUE.value
-                marked_overdue += 1
-            elif not is_past and c.status == CommitmentStatus.OVERDUE:
-                c.status = CommitmentStatus.PENDING.value
-                reopened += 1
+            active = c.status in ACTIVE_COMMITMENT_STATUSES
+            if active:
+                is_past_due = c.due_date is not None and c.due_date < today
+                if is_past_due and c.status != CommitmentStatus.OVERDUE:
+                    c.status = CommitmentStatus.OVERDUE.value
+                    marked_overdue += 1
+                elif (
+                    c.status == CommitmentStatus.OVERDUE
+                    and c.due_date is not None
+                    and not is_past_due
+                ):
+                    reopened += 1
+                    c.status = CommitmentStatus.PENDING.value
+
+                if c.status in {
+                    CommitmentStatus.PENDING.value,
+                    CommitmentStatus.SCHEDULED.value,
+                }:
+                    start_reached = c.start_date is not None and c.start_date <= today
+                    due_soon_without_start = (
+                        c.start_date is None
+                        and c.due_date is not None
+                        and (c.due_date - today).days <= DUE_SOON_DAYS
+                    )
+                    if start_reached or due_soon_without_start:
+                        c.status = CommitmentStatus.IN_PROGRESS.value
+                        started += 1
+
+            status_priority = priority_floor_for_status(c.status)
+            c.priority = (
+                _max_priority(
+                    status_priority,
+                    date_priority(c.due_date, today),
+                ).value
+                if active and status_priority is not None
+                else None
+            )
 
         try:
             active = await self._notifications.sync(family_id, assess(commitments, edges, today))
