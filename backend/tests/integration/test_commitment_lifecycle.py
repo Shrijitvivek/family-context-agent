@@ -5,11 +5,14 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
+import httpx
 from sqlalchemy import delete, func, select
 
+from app.api.dependencies import get_db
 from app.core.constants import CommitmentStatus, CommitmentType, Priority, SourceType
 from app.core.exceptions import ConflictError, InvalidStatusTransitionError, NotFoundError
 from app.db.session import AsyncSessionLocal
+from app.main import app
 from app.models.commitment import Commitment
 from app.models.family import Family
 from app.models.family_member import FamilyMember
@@ -252,6 +255,198 @@ async def test_commitment_cancel_and_overdue_transitions_persist() -> None:
             assert {row.id for row in rows} == {cancelled.id, overdue.id}
         finally:
             await _remove_families(session, [family_id])
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_terminal_commitments_reject_all_service_supported_updates() -> None:
+    family_id, member_id = uuid4(), uuid4()
+    due_date = date(2026, 10, 20)
+
+    async with AsyncSessionLocal() as session:
+        session.add_all(
+            [
+                Family(id=family_id, name="Terminal Protection Family"),
+                FamilyMember(
+                    id=member_id,
+                    family_id=family_id,
+                    name="Terminal Member",
+                    relationship_type="PARENT",
+                ),
+            ]
+        )
+        await session.flush()
+        service = CommitmentService(CommitmentRepository(session))
+
+        try:
+            for index, terminal_status in enumerate(
+                (CommitmentStatus.COMPLETED, CommitmentStatus.CANCELLED)
+            ):
+                item = await service.create(
+                    _create_payload(
+                        family_id,
+                        member_id,
+                        f"Terminal commitment {index}",
+                        due_date,
+                    )
+                )
+                await service.update(
+                    CommitmentUpdate(
+                        family_id=family_id,
+                        commitment_id=item.id,
+                        status=terminal_status,
+                    )
+                )
+                before = await service.get(family_id, item.id)
+                before_values = (
+                    before.amount,
+                    before.title,
+                    before.description,
+                    before.priority,
+                    before.due_date,
+                    before.status,
+                    before.completed_at,
+                    before.updated_at,
+                )
+
+                attempts = (
+                    CommitmentUpdate(
+                        family_id=family_id,
+                        commitment_id=item.id,
+                        amount=Decimal("2000.00"),
+                    ),
+                    CommitmentUpdate(
+                        family_id=family_id,
+                        commitment_id=item.id,
+                        title="Changed title",
+                    ),
+                    CommitmentUpdate(
+                        family_id=family_id,
+                        commitment_id=item.id,
+                        priority=Priority.LOW,
+                    ),
+                    CommitmentUpdate(
+                        family_id=family_id,
+                        commitment_id=item.id,
+                        due_date=date(2026, 10, 28),
+                    ),
+                    CommitmentUpdate(
+                        family_id=family_id,
+                        commitment_id=item.id,
+                        status=CommitmentStatus.PENDING,
+                    ),
+                )
+                for attempt in attempts:
+                    with pytest.raises(ConflictError):
+                        await service.update(attempt)
+
+                after = await service.get(family_id, item.id)
+                assert after.id == item.id
+                assert (
+                    after.amount,
+                    after.title,
+                    after.description,
+                    after.priority,
+                    after.due_date,
+                    after.status,
+                    after.completed_at,
+                    after.updated_at,
+                ) == before_values
+
+            count = await session.scalar(
+                select(func.count(Commitment.id)).where(
+                    Commitment.family_id == family_id
+                )
+            )
+            assert count == 2
+        finally:
+            await _remove_families(session, [family_id])
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_commitment_patch_cannot_bypass_terminal_service_protection() -> None:
+    family_id, member_id = uuid4(), uuid4()
+    previous_overrides = dict(app.dependency_overrides)
+
+    async def db_override():
+        async with AsyncSessionLocal() as api_session:
+            try:
+                yield api_session
+            except Exception:
+                await api_session.rollback()
+                raise
+
+    app.dependency_overrides[get_db] = db_override
+    async with AsyncSessionLocal() as session:
+        session.add_all(
+            [
+                Family(id=family_id, name="Terminal API Family"),
+                FamilyMember(
+                    id=member_id,
+                    family_id=family_id,
+                    name="API Member",
+                    relationship_type="PARENT",
+                ),
+            ]
+        )
+        await session.flush()
+        service = CommitmentService(CommitmentRepository(session))
+
+        try:
+            items = []
+            for index, terminal_status in enumerate(
+                (CommitmentStatus.COMPLETED, CommitmentStatus.CANCELLED)
+            ):
+                item = await service.create(
+                    _create_payload(
+                        family_id,
+                        member_id,
+                        f"Terminal API commitment {index}",
+                        date(2026, 10, 20),
+                    )
+                )
+                item = await service.update(
+                    CommitmentUpdate(
+                        family_id=family_id,
+                        commitment_id=item.id,
+                        status=terminal_status,
+                    )
+                )
+                items.append(item)
+
+            await session.commit()
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://test",
+            ) as client:
+                for item in items:
+                    for body in (
+                        {"family_id": str(family_id), "amount": "2000.00"},
+                        {"family_id": str(family_id), "priority": "LOW"},
+                        {"family_id": str(family_id), "due_date": "2026-10-28"},
+                        {"family_id": str(family_id), "status": "PENDING"},
+                    ):
+                        response = await client.patch(
+                            f"/api/v1/commitments/{item.id}",
+                            json=body,
+                        )
+                        assert response.status_code == 409, response.text
+                        assert response.json()["code"] == "conflict"
+
+                    unchanged = await session.get(
+                        Commitment,
+                        item.id,
+                        populate_existing=True,
+                    )
+                    assert unchanged is not None
+                    assert unchanged.status == item.status
+                    assert unchanged.amount == Decimal("1850.00")
+                    assert unchanged.priority == Priority.HIGH.value
+                    assert unchanged.due_date == date(2026, 10, 20)
+        finally:
+            await _remove_families(session, [family_id])
+            app.dependency_overrides.clear()
+            app.dependency_overrides.update(previous_overrides)
 
 
 @pytest.mark.asyncio(loop_scope="session")

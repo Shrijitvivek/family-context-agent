@@ -5,9 +5,11 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
+import httpx
 from pydantic import ValidationError
 from sqlalchemy import delete, func, select
 
+from app.api.dependencies import get_db
 from app.core.constants import (
     CommitmentStatus,
     CommitmentType,
@@ -18,6 +20,7 @@ from app.core.constants import (
 )
 from app.core.exceptions import DuplicateDependencyError, NotFoundError
 from app.db.session import AsyncSessionLocal
+from app.main import app
 from app.models.commitment import Commitment
 from app.models.commitment_dependency import CommitmentDependency
 from app.models.family import Family
@@ -64,6 +67,15 @@ def _priority_service(session, repository: CommitmentRepository) -> PriorityServ
         repository,
         NotificationService(NotificationRepository(session)),
     )
+
+
+async def _db_override():
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -306,6 +318,8 @@ async def test_dependency_rejects_cross_family_missing_and_self_references() -> 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_completing_prerequisite_does_not_leave_stale_attention() -> None:
     family_id = uuid4()
+    previous_overrides = dict(app.dependency_overrides)
+    app.dependency_overrides[get_db] = _db_override
     async with AsyncSessionLocal() as session:
         session.add(Family(id=family_id, name="Completion Attention Integration Family"))
         await session.flush()
@@ -320,6 +334,9 @@ async def test_completing_prerequisite_does_not_leave_stale_attention() -> None:
             target = await commitments.create(
                 _commitment_payload(family_id, "Stale Check Appointment", date(2026, 10, 16))
             )
+            unrelated = await commitments.create(
+                _commitment_payload(family_id, "Unrelated Due Soon Item", date(2026, 10, 15))
+            )
             await commitments.create_dependency(
                 CommitmentDependencyCreate(
                     family_id=family_id,
@@ -329,23 +346,49 @@ async def test_completing_prerequisite_does_not_leave_stale_attention() -> None:
                 )
             )
             await priorities.recalculate(family_id, TODAY)
+            before_completion = await priorities.attention_items(family_id)
+            unrelated_before = [
+                (item.notification_type, item.priority)
+                for item in before_completion
+                if item.commitment_id == unrelated.id
+            ]
+            assert unrelated_before
+            await session.commit()
 
-            await update_commitment(
-                commitments,
-                CommitmentUpdate(
-                    family_id=family_id,
-                    commitment_id=prerequisite.id,
-                    status=CommitmentStatus.COMPLETED,
-                ),
-            )
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://test",
+            ) as client:
+                response = await client.patch(
+                    f"/api/v1/commitments/{prerequisite.id}",
+                    json={
+                        "family_id": str(family_id),
+                        "status": CommitmentStatus.COMPLETED.value,
+                    },
+                )
+            assert response.status_code == 200, response.text
 
-            # Completion is expected to update attention as described by the
-            # design flow; this service is constructed the same way as the API.
-            active_after_completion = await priorities.attention_items(family_id)
+            # The API's production service composition refreshes attention in
+            # the same request after persisting the completion.
+            async with AsyncSessionLocal() as verify_session:
+                verify_priorities = _priority_service(
+                    verify_session,
+                    CommitmentRepository(verify_session),
+                )
+                active_after_completion = await verify_priorities.attention_items(family_id)
             assert not any(
                 item.commitment_id == prerequisite.id
                 and item.notification_type == NotificationType.DEPENDENCY_WARNING
                 for item in active_after_completion
             )
+            unrelated_after = [
+                (item.notification_type, item.priority)
+                for item in active_after_completion
+                if item.commitment_id == unrelated.id
+            ]
+            assert unrelated_after == unrelated_before
         finally:
             await _delete_families(session, [family_id])
+            app.dependency_overrides.clear()
+            app.dependency_overrides.update(previous_overrides)

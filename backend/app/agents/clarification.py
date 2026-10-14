@@ -14,7 +14,6 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "create_commitment": (
         "commitment_type",
         "title",
-        
     ),
     "update_commitment": (
         "commitment_id",
@@ -45,8 +44,6 @@ FIELD_QUESTIONS: dict[str, str] = {
         "What is the relationship between the two commitments?"
     ),
 }
-
-
 
 def find_missing_fields(
     tool_name: str,
@@ -83,8 +80,6 @@ def find_missing_fields(
             missing.append(field)
 
     return missing
-
-
 
 def build_clarification(
     tool_name: str,

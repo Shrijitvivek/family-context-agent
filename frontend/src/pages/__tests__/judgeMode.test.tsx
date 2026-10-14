@@ -27,12 +27,17 @@ describe("judge household dashboard scenario", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     dashboardApi.useFamily.mockReturnValue({
+      families: [{ id: "nair-family", timezone: "Asia/Kolkata" }],
       selectedFamilyId: "nair-family",
       selectedMemberId: null,
       members: [],
     });
     dashboardApi.getPriorities.mockResolvedValue([
-      { title: "CBC test", priority: "HIGH", reason: "Needed before Doctor Review" },
+      {
+        id: "priority-cbc", commitment_id: "cbc-1", notification_type: "DEPENDENCY",
+        title: "CBC test", message: "Needed before Doctor Review", priority: "HIGH",
+        is_read: false, created_at: "2026-10-14T00:00:00Z",
+      },
     ]);
     dashboardApi.getUpcomingCommitments.mockResolvedValue([
       {

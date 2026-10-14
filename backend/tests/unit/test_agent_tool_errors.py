@@ -51,16 +51,16 @@ class FakeToolRegistry:
         ToolInputValidationError("Invalid input for add_expense"),
     ],
 )
-async def test_agent_run_records_tool_errors_and_keeps_conversation_flow(error) -> None:
+async def test_agent_run_records_tool_errors_and_stops_mutation_turn(error) -> None:
     family_id = uuid4()
     registry = FakeToolRegistry(error)
     ai = FakeAIClient(
-    "create_commitment",
-    {
-        "commitment_type": "TASK",
-        "title": "Electricity bill",
-    },
-)
+        "create_commitment",
+        {
+            "commitment_type": "TASK",
+            "title": "Electricity bill",
+        },
+    )
     agent = FamilyContextAgent(ai, registry)  # type: ignore[arg-type]
     state = AgentState(
         family_id=family_id,
@@ -76,8 +76,12 @@ async def test_agent_run_records_tool_errors_and_keeps_conversation_flow(error) 
         "success": False,
         "error": str(error),
     }
-    assert result.assistant_message == "I need to clarify that request."
-    assert ai.calls == 2
+    if isinstance(error, DuplicateCommitmentError):
+        assert "matching commitment already exists" in result.assistant_message.casefold()
+        assert "confirm" in result.assistant_message.casefold()
+    else:
+        assert result.assistant_message == "I need to clarify that request."
+    assert ai.calls == 1
 
 
 @pytest.mark.asyncio

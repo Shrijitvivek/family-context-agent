@@ -15,7 +15,7 @@ from app.repositories.conversation import ConversationRepository
 from app.repositories.document import DocumentRepository
 from app.repositories.expense import ExpenseRepository
 from app.repositories.notification import NotificationRepository
-from app.services.commitment import CommitmentService
+from app.services.composition import create_commitment_service
 from app.services.expense import ExpenseService
 from app.services.notification import NotificationService
 from app.services.priority import PriorityService
@@ -37,7 +37,7 @@ class ChatService:
         family_repository = FamilyRepository(session)
 
         expense_service = ExpenseService(expense_repository)
-        commitment_service = CommitmentService(commitment_repository)
+        commitment_service = create_commitment_service(session)
         context_service = ContextService(
             families=family_repository,
             commitments=commitment_repository,
@@ -152,6 +152,7 @@ class ChatService:
         }
     ],
     metadata={
+        "family_timezone": household_context.timezone,
         "document": {
             "file_name": document.file_name,
             "document_type": document.document_type,

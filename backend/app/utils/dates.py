@@ -42,6 +42,10 @@ _COMPOUND_RELATIVE_RE = re.compile(
     re.IGNORECASE,
 )
 _RELATIVE_WORD_RE = re.compile(r"\b(today|yesterday|tomorrow|last\s+week|next\s+week)\b", re.IGNORECASE)
+_COMMITMENT_MONTH_END_RE = re.compile(
+    r"\b(?:this\s+month(?:'s)?\s+end|end\s+of\s+(?:this\s+|the\s+)?month)\b",
+    re.IGNORECASE,
+)
 _UNSUPPORTED_RELATIVE_RE = re.compile(
     r"\b(?:last\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|month)|"
     r"next\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|month)|"
@@ -83,7 +87,12 @@ def _parse_count(value: str) -> int:
     return count
 
 
-def _parse_explicit_date(value: str, reference_date: date) -> date:
+def _parse_explicit_date(
+    value: str,
+    reference_date: date,
+    *,
+    prefer_upcoming_yearless: bool = False,
+) -> date:
     candidate = value.strip().rstrip(",")
     for date_format in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
         try:
@@ -108,12 +117,30 @@ def _parse_explicit_date(value: str, reference_date: date) -> date:
             if calendar.month_name[number].casefold().startswith(month_text.casefold())
             or calendar.month_abbr[number].casefold() == month_text.casefold()
         )
-        # For month/day wording without a year, use the current family-local year.
-        year = int(year_text) if year_text else reference_date.year
-        try:
-            return date(year, month, day)
-        except ValueError as exc:
-            raise ValueError(f"Invalid expense date: {candidate}") from exc
+        if year_text:
+            year = int(year_text)
+            try:
+                return date(year, month, day)
+            except ValueError as exc:
+                label = "Invalid date" if prefer_upcoming_yearless else "Invalid expense date"
+                raise ValueError(f"{label}: {candidate}") from exc
+
+        year = reference_date.year
+        last_year = year + 8 if prefer_upcoming_yearless else year
+        while year <= last_year:
+            try:
+                resolved = date(year, month, day)
+            except ValueError as exc:
+                if not prefer_upcoming_yearless:
+                    raise ValueError(f"Invalid expense date: {candidate}") from exc
+                year += 1
+                continue
+            if not prefer_upcoming_yearless or resolved >= reference_date:
+                return resolved
+            year += 1
+        if prefer_upcoming_yearless:
+            raise ValueError(f"Invalid or ambiguous date: {candidate}")
+        raise ValueError(f"Invalid expense date: {candidate}")
 
     raise ValueError(f"Invalid or unsupported expense date: {candidate}")
 
@@ -123,6 +150,7 @@ def resolve_expense_date(
     timezone: str,
     *,
     today: date | None = None,
+    prefer_upcoming_yearless: bool = False,
 ) -> date:
     """Resolve supported expense dates from user text and family-local today.
 
@@ -138,7 +166,11 @@ def resolve_expense_date(
 
     for match in _RELATIVE_BASE_RE.finditer(user_message):
         count = _parse_count(match.group("count"))
-        base = _parse_explicit_date(match.group("base"), reference_date)
+        base = _parse_explicit_date(
+            match.group("base"),
+            reference_date,
+            prefer_upcoming_yearless=prefer_upcoming_yearless,
+        )
         offset = count if match.group("direction").casefold() == "after" else -count
         matches.append((match.span(), base + timedelta(days=offset)))
         consumed_spans.append(match.span("base"))
@@ -171,7 +203,11 @@ def resolve_expense_date(
     for match in _EXPLICIT_DATE_RE.finditer(user_message):
         if any(start <= match.start() and match.end() <= end for start, end in consumed_spans):
             continue
-        parsed = _parse_explicit_date(match.group(), reference_date)
+        parsed = _parse_explicit_date(
+            match.group(),
+            reference_date,
+            prefer_upcoming_yearless=prefer_upcoming_yearless,
+        )
         matches.append((match.span(), parsed))
 
     for match in _MALFORMED_NUMERIC_DATE_RE.finditer(user_message):
@@ -194,6 +230,62 @@ def resolve_expense_date(
     return reference_date
 
 
+def resolve_commitment_date(
+    user_message: str,
+    timezone: str,
+    *,
+    today: date | None = None,
+) -> date | None:
+    """Resolve a date stated by the user for a new commitment.
+
+    Yearless month/day dates use their next occurrence in the family's local
+    calendar. Explicit years and explicit past dates are preserved. No date in
+    the user message returns ``None`` so a model-proposed date cannot be used as
+    a substitute.
+    """
+
+    reference_date = today if today is not None else today_in(timezone)
+    month_end_matches = list(_COMMITMENT_MONTH_END_RE.finditer(user_message))
+    month_end_dates = {
+        date(
+            reference_date.year,
+            reference_date.month,
+            calendar.monthrange(reference_date.year, reference_date.month)[1],
+        )
+        for _ in month_end_matches
+    }
+    remaining_message = _COMMITMENT_MONTH_END_RE.sub(" ", user_message)
+
+    has_date_expression = any(
+        pattern.search(remaining_message)
+        for pattern in (
+            _RELATIVE_BASE_RE,
+            _RELATIVE_AMOUNT_RE,
+            _COMPOUND_RELATIVE_RE,
+            _RELATIVE_WORD_RE,
+            _EXPLICIT_DATE_RE,
+            _MALFORMED_NUMERIC_DATE_RE,
+            _UNSUPPORTED_RELATIVE_RE,
+        )
+    )
+    if not has_date_expression and not month_end_dates:
+        return None
+
+    resolved = set(month_end_dates)
+    if has_date_expression:
+        resolved.add(
+            resolve_expense_date(
+                remaining_message,
+                timezone,
+                today=reference_date,
+                prefer_upcoming_yearless=True,
+            )
+        )
+    if len(resolved) > 1:
+        raise ValueError("Conflicting commitment dates were provided.")
+    return next(iter(resolved))
+
+
 def describe_due(due_date: date, today: date) -> str:
     """Human-readable distance to a due date, e.g. 'due tomorrow', 'overdue by 3 days'."""
 
@@ -206,36 +298,3 @@ def describe_due(due_date: date, today: date) -> str:
     if days == 1:
         return "due tomorrow"
     return f"due in {days} days"
-
-
-def resolve_commitment_due_date(
-    user_message: str,
-    timezone: str,
-    *,
-    today: date | None = None,
-) -> date:
-    """Resolve a commitment due date without defaulting to today."""
-
-    reference_date = today if today is not None else today_in(timezone)
-
-    resolved = resolve_expense_date(
-        user_message,
-        timezone,
-        today=reference_date,
-    )
-
-    # The expense resolver defaults to today when no date is found.
-    # Require an actual date expression for commitment due dates.
-    has_date_expression = bool(
-        _EXPLICIT_DATE_RE.search(user_message)
-        or _RELATIVE_BASE_RE.search(user_message)
-        or _RELATIVE_AMOUNT_RE.search(user_message)
-        or _COMPOUND_RELATIVE_RE.search(user_message)
-        or _RELATIVE_WORD_RE.search(user_message)
-    )
-
-    if not has_date_expression:
-        raise ValueError("A commitment due date was not provided.")
-
-    return resolved
-

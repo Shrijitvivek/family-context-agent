@@ -62,19 +62,17 @@ export function useChat(familyId: string, memberId: string | null) {
             data?: {
               code?: string;
               message?: string;
-              detail?: unknown;
+              details?: { entity?: string };
             };
           };
           message?: string;
         };
 
-        const status = err.response?.status;
         const responseData = err.response?.data;
 
         const isMissingConversation =
-          status === 400 ||
-          status === 404 ||
-          responseData?.code === "not_found" ||
+          (responseData?.code === "not_found" &&
+            responseData.details?.entity === "Conversation") ||
           responseData?.message === "Conversation was not found." ||
           err.message?.includes("Conversation was not found");
 

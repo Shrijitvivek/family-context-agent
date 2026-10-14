@@ -60,7 +60,10 @@ async def test_chat_service_process_message_persists_messages_and_agent_run_even
     service._document_repository = SimpleNamespace()
     service._context_service = SimpleNamespace(
         build=lambda **_kwargs: _empty_async_result(
-            SimpleNamespace(to_prompt=lambda: "Household context")
+                SimpleNamespace(
+                    timezone="Asia/Kolkata",
+                    to_prompt=lambda: "Household context",
+                )
         )
     )
     service._agent = FakeAgent()

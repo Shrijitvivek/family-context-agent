@@ -21,6 +21,7 @@ import DocumentCard from "../components/documents/DocumentCard";
 import {
   getDocuments,
   type DocumentResponse,
+  type ConfirmedCommitment,
   uploadDocument,
 } from "../services/api/documents";
 
@@ -313,6 +314,22 @@ export default function DocumentsPage() {
     }
   };
 
+  const handleConfirmed = (
+    documentId: string,
+    _commitment: ConfirmedCommitment,
+  ) => {
+    if (!selectedFamilyId) return;
+
+    setDocuments((current) => current.map((document) =>
+      document.id === documentId
+        ? { ...document, processing_status: "CONFIRMED" }
+        : document,
+    ));
+    void getDocuments(selectedFamilyId, selectedMemberId)
+      .then(setDocuments)
+      .catch(() => setError("Commitment was confirmed, but the document list could not be refreshed."));
+  };
+
   return (
     <main className="mx-auto w-full max-w-[1600px] space-y-5 pb-8 sm:space-y-6 font-sans">
       {/* Page header */}
@@ -473,8 +490,9 @@ export default function DocumentsPage() {
             {documents.map((document) => (
               <DocumentCard
                 key={document.id}
-                filename={document.file_name}
-                status={document.processing_status ?? "UNKNOWN"}
+                document={document}
+                familyId={selectedFamilyId}
+                onConfirmed={handleConfirmed}
               />
             ))}
           </div>

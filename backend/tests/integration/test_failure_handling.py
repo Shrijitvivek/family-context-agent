@@ -180,7 +180,7 @@ async def test_api_persistence_failures_rollback_expense_commitment_create_and_u
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_chat_can_return_success_claim_after_real_expense_tool_persistence_failure(monkeypatch):
+async def test_chat_does_not_claim_success_after_expense_persistence_failure(monkeypatch):
     import app.services.chat as chat_module
 
     family_id, member_id = uuid4(), uuid4()
@@ -214,11 +214,51 @@ async def test_chat_can_return_success_claim_after_real_expense_tool_persistence
                 })
             assert response.status_code == 200
             payload = response.json()
-            assert "recorded successfully" in payload["message"]
+            assert "not completed successfully" in payload["message"]
+            assert "recorded successfully" not in payload["message"]
+            assert "saved" in payload["message"]
             assert payload["tool_results"][0]["result"]["success"] is False
             assert await _count(Expense, family_id) == 0
         finally:
             monkeypatch.setattr(ExpenseRepository, "commit", original_commit)
+            await _cleanup(session, [family_id])
+            app.dependency_overrides.clear()
+            app.dependency_overrides.update(previous_overrides)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_chat_preserves_normal_successful_expense_response(monkeypatch):
+    import app.services.chat as chat_module
+
+    family_id, member_id = uuid4(), uuid4()
+    model = ScriptedActionThenClaimModel()
+    monkeypatch.setattr(chat_module, "AIModelClient", lambda: model)
+    previous_overrides = dict(app.dependency_overrides)
+    app.dependency_overrides[get_db] = _db_override
+    async with AsyncSessionLocal() as session:
+        session.add_all([
+            Family(id=family_id, name="Successful Agent Action Family"),
+            FamilyMember(id=member_id, family_id=family_id, name="Member", relationship_type="PARENT"),
+        ])
+        await session.commit()
+        try:
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                first_turn = await client.post("/api/v1/chat", json={
+                    "family_id": str(family_id), "member_id": str(member_id), "message": "Hello",
+                })
+                assert first_turn.status_code == 200
+                response = await client.post("/api/v1/chat", json={
+                    "family_id": str(family_id), "member_id": str(member_id),
+                    "conversation_id": first_turn.json()["conversation_id"],
+                    "message": "I spent â‚¹45 on food today.",
+                })
+            assert response.status_code == 200
+            payload = response.json()
+            assert "recorded successfully" in payload["message"]
+            assert payload["tool_results"][0]["result"]["success"] is True
+            assert await _count(Expense, family_id) == 1
+        finally:
             await _cleanup(session, [family_id])
             app.dependency_overrides.clear()
             app.dependency_overrides.update(previous_overrides)

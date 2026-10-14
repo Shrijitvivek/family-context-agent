@@ -169,6 +169,10 @@ class DocumentService:
         member_id: UUID,
     ) -> list[Document]:
         """List documents uploaded by a specific family member."""
+        await self._commitments.assert_scope(
+            family_id,
+            member_id=member_id,
+        )
         documents = await self._documents.list_by_family(family_id)
         return [
             document

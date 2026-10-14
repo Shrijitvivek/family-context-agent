@@ -7,12 +7,18 @@ a tool that is registered here.
 
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any
+from uuid import UUID
 
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, ValidationError
 
-from app.core.exceptions import FamilyContextError, ToolInputValidationError
+from app.core.exceptions import (
+    AmbiguousCommitmentError,
+    FamilyContextError,
+    ToolInputValidationError,
+)
 from app.schemas.commitment import (
     CommitmentUpdate,
     GetFamilyPrioritiesQuery,
@@ -61,12 +67,18 @@ ToolResult = (
 ToolHandler = Callable[[BaseModel], Awaitable[ToolResult]]
 
 
+class ToolSideEffect(StrEnum):
+    READ_ONLY = "read_only"
+    MUTATION = "mutation"
+
+
 @dataclass(frozen=True)
 class RegisteredTool:
     name: str
     description: str
     input_model: type[BaseModel]
     handler: ToolHandler
+    side_effect: ToolSideEffect = ToolSideEffect.READ_ONLY
 
     def model_definition(self) -> dict[str, Any]:
         """Return an OpenAI/NVIDIA-compatible function-tool description."""
@@ -102,6 +114,7 @@ class ToolRegistry:
         priority_service: PriorityService,
         document_service: DocumentService | None = None,
     ) -> None:
+        self._commitment_service = commitment_service
 
         async def add_expense_handler(
             payload: BaseModel,
@@ -168,6 +181,7 @@ class ToolRegistry:
                 ),
                 input_model=ExpenseCreate,
                 handler=add_expense_handler,
+                side_effect=ToolSideEffect.MUTATION,
             ),
 
             RegisteredTool(
@@ -178,6 +192,7 @@ class ToolRegistry:
                 ),
                 input_model=ExpenseSummaryQuery,
                 handler=expense_summary_handler,
+                side_effect=ToolSideEffect.READ_ONLY,
             ),
 
             RegisteredTool(
@@ -193,6 +208,7 @@ class ToolRegistry:
                 ),
                 input_model=CreateCommitmentInput,
                 handler=create_commitment_handler,
+                side_effect=ToolSideEffect.MUTATION,
             ),
 
             RegisteredTool(
@@ -210,6 +226,7 @@ class ToolRegistry:
                 ),
                 input_model=SearchCommitmentsQuery,
                 handler=search_commitments_handler,
+                side_effect=ToolSideEffect.READ_ONLY,
             ),
 
             RegisteredTool(
@@ -228,6 +245,7 @@ class ToolRegistry:
                 ),
                 input_model=CommitmentUpdate,
                 handler=update_commitment_handler,
+                side_effect=ToolSideEffect.MUTATION,
             ),
 
             RegisteredTool(
@@ -239,6 +257,7 @@ class ToolRegistry:
                 ),
                 input_model=CreateDependencyInput,
                 handler=create_dependency_handler,
+                side_effect=ToolSideEffect.MUTATION,
             ),
 
             RegisteredTool(
@@ -250,6 +269,7 @@ class ToolRegistry:
                 ),
                 input_model=GetFamilyPrioritiesQuery,
                 handler=get_family_priorities_handler,
+                side_effect=ToolSideEffect.READ_ONLY,
             ),
         )
 
@@ -267,6 +287,69 @@ class ToolRegistry:
             tool.model_definition()
             for tool in self._tools.values()
         ]
+
+    def side_effect(self, name: str) -> ToolSideEffect:
+        """Return a tool's declared effect; unknown tools are unsafe by default."""
+
+        tool = self._tools.get(name)
+        return tool.side_effect if tool is not None else ToolSideEffect.MUTATION
+
+    async def resolve_update_target(
+        self,
+        *,
+        family_id: UUID,
+        member_id: UUID | None,
+        reference: str,
+        model_selected_id: UUID,
+    ) -> UUID:
+        """Resolve the user's reference independently of the model-selected ID."""
+
+        candidates = await self._commitment_service.find_update_candidates(
+            family_id=family_id,
+            member_id=member_id,
+            reference=reference,
+        )
+        if len(candidates) > 1:
+            details = []
+            for candidate in candidates:
+                due = (
+                    candidate.due_date.strftime("%d %b %Y")
+                    if candidate.due_date
+                    else "no due date"
+                )
+                amount = (
+                    f" — ₹{candidate.amount:,.2f}"
+                    if candidate.amount is not None
+                    else ""
+                )
+                details.append(
+                    {
+                        "commitment_id": str(candidate.id),
+                        "title": candidate.title,
+                        "due_date": candidate.due_date.isoformat()
+                        if candidate.due_date
+                        else None,
+                        "amount": str(candidate.amount)
+                        if candidate.amount is not None
+                        else None,
+                        "display": f"{candidate.title} — due {due}{amount}",
+                    }
+                )
+            raise AmbiguousCommitmentError(details)
+
+        if not candidates:
+            raise ToolInputValidationError(
+                "I couldn't identify a commitment matching that reference. "
+                "Please clarify which commitment you mean."
+            )
+
+        if candidates[0].id != model_selected_id:
+            raise ToolInputValidationError(
+                "The model-selected commitment does not match the user's reference. "
+                "Please clarify which commitment you mean."
+            )
+
+        return candidates[0].id
 
     async def dispatch(
         self,

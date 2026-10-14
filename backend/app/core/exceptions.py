@@ -50,6 +50,20 @@ class DuplicateCommitmentError(ConflictError):
         )
 
 
+class AmbiguousCommitmentError(ConflictError):
+    code = "ambiguous_commitment_reference"
+
+    def __init__(self, candidates: list[dict[str, Any]]) -> None:
+        choices = "; ".join(
+            candidate["display"] for candidate in candidates
+        )
+        super().__init__(
+            "I found multiple matching commitments. Which one do you mean? "
+            f"{choices}",
+            details={"candidates": candidates},
+        )
+
+
 class DuplicateDependencyError(ConflictError):
     code = "duplicate_dependency"
 

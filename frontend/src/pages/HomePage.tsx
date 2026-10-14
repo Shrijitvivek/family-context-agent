@@ -20,6 +20,7 @@ import {
   type Expense,
 } from "../services/api/expenses";
 import { getDocuments } from "../services/api/documents";
+import { getFamilyCalendarDate } from "../utils/familyDate";
 
 type IconName =
   | "calendar"
@@ -275,17 +276,38 @@ function SectionHeading({
 }
 
 export default function HomePage() {
-  const { selectedFamilyId, selectedMemberId, members } = useFamily();
+  const { families = [], selectedFamilyId, selectedMemberId, members } = useFamily();
+  const selectedFamily = families.find((family) => family.id === selectedFamilyId);
+  const calendarDate = getFamilyCalendarDate(selectedFamily?.timezone);
+  const calendarDays: (number | null)[] = [
+    ...Array.from({ length: calendarDate.firstWeekday }, () => null),
+    ...Array.from({ length: calendarDate.daysInMonth }, (_, index) => index + 1),
+  ];
 
   const [upcomingItems, setUpcomingItems] = useState<Commitment[]>([]);
   const [priorities, setPriorities] = useState<Priority[]>([]);
   const [recentExpenses, setRecentExpenses] = useState<Expense[]>([]);
   const [expenseTotal, setExpenseTotal] = useState<number | null>(null);
+  const [expenseCount, setExpenseCount] = useState<number | null>(null);
   const [documentCount, setDocumentCount] = useState<number | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [dataContextKey, setDataContextKey] = useState<string | null>(null);
+  const [errorContextKey, setErrorContextKey] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
+
+  const contextKey = JSON.stringify([selectedFamilyId, selectedMemberId]);
+  const hasCurrentData = Boolean(selectedFamilyId) && dataContextKey === contextKey;
+  const currentError = errorContextKey === contextKey ? error : null;
+  const dashboardLoading = Boolean(selectedFamilyId) &&
+    (loading || (!hasCurrentData && !currentError));
+  const dashboardEmpty = hasCurrentData &&
+    upcomingItems.length === 0 &&
+    priorities.length === 0 &&
+    recentExpenses.length === 0 &&
+    (expenseTotal === null || expenseTotal === 0) &&
+    (documentCount === null || documentCount === 0);
 
   const selectedMember = members.find(
     (member) => member.id === selectedMemberId,
@@ -302,8 +324,11 @@ export default function HomePage() {
       setPriorities([]);
       setRecentExpenses([]);
       setExpenseTotal(null);
+      setExpenseCount(null);
       setDocumentCount(null);
       setError(null);
+      setDataContextKey(null);
+      setErrorContextKey(null);
       setLoading(false);
       return;
     }
@@ -311,6 +336,7 @@ export default function HomePage() {
     async function loadDashboard() {
       setLoading(true);
       setError(null);
+      setErrorContextKey(null);
 
       try {
         const familyId = selectedFamilyId!;
@@ -342,11 +368,14 @@ export default function HomePage() {
 
         setUpcomingItems(visibleCommitments);
         setExpenseTotal(Number(summary.total));
+        setExpenseCount(summary.transaction_count);
         setRecentExpenses(visibleExpenses.slice(0, 3));
         setDocumentCount(documents.length);
         setPriorities(priorityItems);
+        setDataContextKey(contextKey);
       } catch (err) {
         if (cancelled) return;
+        setErrorContextKey(contextKey);
         setError(
           err instanceof Error
             ? err.message
@@ -364,7 +393,7 @@ export default function HomePage() {
     };
   }, [selectedFamilyId, selectedMemberId, retryKey]);
 
-  const pendingCount = upcomingItems.filter(
+  const pendingCount = (hasCurrentData ? upcomingItems : []).filter(
     (item) => item.status.toUpperCase() === "PENDING",
   ).length;
 
@@ -391,7 +420,7 @@ export default function HomePage() {
         <div className="flex min-h-[220px] flex-col justify-between px-6 py-6 sm:min-h-[230px] sm:px-8 lg:min-h-[245px] lg:px-10">
           <div className="flex justify-between items-start">
             <span className="text-xs font-semibold text-slate-500 tracking-wider">
-              SUNDAY, 11 OCTOBER 2026
+              {calendarDate.headerLabel}
             </span>
           </div>
 
@@ -417,18 +446,47 @@ export default function HomePage() {
         </div>
       </header>
 
+      {!selectedFamilyId ? (
+        <Surface className="p-8 text-center">
+          <h2 className="text-base font-semibold text-slate-900">Select a family</h2>
+          <p className="mt-1 text-sm text-slate-600">Choose a household to load its dashboard.</p>
+        </Surface>
+      ) : currentError ? (
+        <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-5">
+          <h2 className="text-sm font-semibold text-rose-900">Dashboard could not be loaded</h2>
+          <p className="mt-1 text-sm text-rose-800">{currentError}</p>
+          <button
+            type="button"
+            onClick={() => setRetryKey((key) => key + 1)}
+            disabled={loading}
+            className="mt-3 rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-800 disabled:opacity-60"
+          >
+            Try again
+          </button>
+        </div>
+      ) : dashboardLoading ? (
+        <div role="status" aria-live="polite" className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-600">
+          Loading dashboard…
+        </div>
+      ) : !hasCurrentData || dashboardEmpty ? (
+        <Surface className="p-8 text-center">
+          <h2 className="text-base font-semibold text-slate-900">No dashboard data</h2>
+          <p className="mt-1 text-sm text-slate-600">There is no household data to show yet.</p>
+        </Surface>
+      ) : (
+      <>
       {/* Summary cards row */}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Surface className="p-5 flex justify-between items-start">
           <div>
             <p className="text-xs font-medium text-slate-500">
-              Upcoming commitments
+              Commitments
             </p>
             <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
-              {loading ? "—" : upcomingItems.length}
+              {upcomingItems.length}
             </p>
             <p className="mt-1 text-xs text-emerald-600 font-medium">
-              +2 from last week
+              In selected household
             </p>
           </div>
           <IconTile icon="calendar" tone="violet" size="md" />
@@ -438,10 +496,10 @@ export default function HomePage() {
           <div>
             <p className="text-xs font-medium text-slate-500">Pending items</p>
             <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
-              {loading ? "—" : pendingCount}
+              {pendingCount}
             </p>
             <p className="mt-1 text-xs text-amber-600 font-medium">
-              3 high priority
+              Requiring action
             </p>
           </div>
           <IconTile icon="check" tone="green" size="md" />
@@ -456,7 +514,7 @@ export default function HomePage() {
               {expenseTotal === null ? "—" : formatCurrency(expenseTotal)}
             </p>
             <p className="mt-1 text-xs text-rose-600 font-medium">
-              -12% from last month
+              {expenseCount ?? 0} {expenseCount === 1 ? "transaction" : "transactions"}
             </p>
           </div>
           <IconTile icon="wallet" tone="rose" size="md" />
@@ -471,55 +529,44 @@ export default function HomePage() {
               {documentCount ?? 0}
             </p>
             <p className="mt-1 text-xs text-slate-400 font-medium">
-              No new documents
+              Currently on file
             </p>
           </div>
           <IconTile icon="file" tone="blue" size="md" />
         </Surface>
       </section>
 
-      {/* Main Grid: Today's commitments, Priority items, Calendar */}
+      {/* Main Grid: household commitments, attention, calendar */}
       <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-        {/* Today's commitments */}
+        {/* Commitments */}
         <Surface className="p-5">
           <SectionHeading
             icon="calendar"
-            title="Today's commitments"
+            title="Commitments"
             actionText="View all"
           />
           <div className="mt-4 divide-y divide-slate-100">
-            {[
-              {
-                date: "08 Oct",
-                title: "Kavya's term fee",
-                time: "All day",
-                status: "Overdue",
-                color: "bg-rose-500",
-              },
-              {
-                date: "11 Oct",
-                title: "KSEB Electricity Bill",
-                time: "All day",
-                status: "Pending",
-                color: "bg-amber-500",
-              },
-              {
-                date: "15 Oct",
-                title: "Amma's fasting blood sugar test",
-                time: "9:00 AM",
-                status: "Upcoming",
-                color: "bg-blue-500",
-              },
-              {
-                date: "18 Oct",
-                title: "Groceries restock",
-                time: "All day",
-                status: "Upcoming",
-                color: "bg-emerald-500",
-              },
-            ].map((item, idx) => (
-              pyItemRow(item, idx)
-            ))}
+            {upcomingItems.length > 0 ? upcomingItems.map((item) => (
+              <div key={item.id} className="flex items-center justify-between gap-3 py-3 text-xs">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-slate-900">{item.title}</p>
+                  <p className="mt-1 text-[11px] text-slate-500">Due {formatDate(item.due_date)}</p>
+                </div>
+                <span className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold ${
+                  item.status.toUpperCase() === "OVERDUE"
+                    ? "bg-rose-100 text-rose-700"
+                    : item.status.toUpperCase() === "COMPLETED"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : item.status.toUpperCase() === "CANCELLED"
+                        ? "bg-slate-100 text-slate-600"
+                        : "bg-amber-100 text-amber-700"
+                }`}>
+                  {item.status.replaceAll("_", " ")}
+                </span>
+              </div>
+            )) : (
+              <p className="py-4 text-sm text-slate-500">No commitments for this household.</p>
+            )}
           </div>
         </Surface>
 
@@ -532,47 +579,21 @@ export default function HomePage() {
             actionText="View all"
           />
           <div className="mt-4 space-y-3">
-            <div className="flex items-start justify-between p-3 rounded-xl bg-rose-50/50 border border-rose-100">
-              <div>
-                <p className="text-xs font-semibold text-slate-900">
-                  Kavya's term fee is overdue
-                </p>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Overdue since 8 Oct 2026
-                </p>
+            {priorities.length > 0 ? priorities.map((item) => (
+              <div key={item.id} className="flex items-start justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-slate-900">
+                    {item.title || item.commitment?.title || "Household attention"}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-slate-500">{item.message}</p>
+                </div>
+                <span className="shrink-0 rounded-md bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
+                  {item.priority}
+                </span>
               </div>
-              <span className="px-2 py-0.5 text-[10px] font-semibold bg-rose-100 text-rose-700 rounded-md">
-                Critical
-              </span>
-            </div>
-
-            <div className="flex items-start justify-between p-3 rounded-xl bg-amber-50/50 border border-amber-100">
-              <div>
-                <p className="text-xs font-semibold text-slate-900">
-                  KSEB Electricity Bill is due tomorrow
-                </p>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Due on 11 Oct 2026
-                </p>
-              </div>
-              <span className="px-2 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-700 rounded-md">
-                High
-              </span>
-            </div>
-
-            <div className="flex items-start justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
-              <div>
-                <p className="text-xs font-semibold text-slate-900">
-                  Amma's fasting blood sugar test
-                </p>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Due in 4 days
-                </p>
-              </div>
-              <span className="px-2 py-0.5 text-[10px] font-semibold bg-blue-100 text-blue-700 rounded-md">
-                Medium
-              </span>
-            </div>
+            )) : (
+              <p className="py-4 text-sm text-slate-500">No attention items right now.</p>
+            )}
           </div>
         </Surface>
 
@@ -580,7 +601,7 @@ export default function HomePage() {
         <Surface className="p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-slate-900">
-              October 2026
+              {calendarDate.monthYearLabel}
             </h3>
             <div className="flex gap-1 text-slate-400">
               <button className="p-1 hover:bg-slate-100 rounded">‹</button>
@@ -597,13 +618,16 @@ export default function HomePage() {
             <span>Sat</span>
           </div>
           <div className="grid grid-cols-7 gap-y-2 text-center text-xs">
-            {Array.from({ length: 31 }, (_, i) => {
-              const day = i + 1;
-              const isSelected = day === 11;
-              const hasDot = [1, 3, 15, 18, 21, 22].includes(day);
+            {calendarDays.map((day, index) => {
+              if (day === null) {
+                return <div key={`calendar-spacer-${index}`} aria-hidden="true" />;
+              }
+              const isSelected = day === calendarDate.day;
               return (
                 <div key={day} className="flex flex-col items-center justify-center">
                   <span
+                    aria-current={isSelected ? "date" : undefined}
+                    aria-label={isSelected ? `Today, ${calendarDate.headerLabel}` : undefined}
                     className={`size-7 flex items-center justify-center rounded-full ${
                       isSelected
                         ? "bg-violet-600 text-white font-semibold"
@@ -612,9 +636,6 @@ export default function HomePage() {
                   >
                     {day}
                   </span>
-                  {hasDot && (
-                    <span className="size-1 rounded-full bg-violet-500 mt-0.5" />
-                  )}
                 </div>
               );
             })}
@@ -623,7 +644,7 @@ export default function HomePage() {
       </section>
 
       {/* Bottom Grid: Recent Expenses, Quick Actions, Recent Activity */}
-      <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+      <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         {/* Recent expenses */}
         <Surface className="p-5">
           <SectionHeading
@@ -650,41 +671,7 @@ export default function HomePage() {
                 </div>
               ))
             ) : (
-              <>
-                <div className="py-2.5 flex justify-between items-center">
-                  <div>
-                    <p className="text-xs font-semibold text-slate-900">
-                      Medical - Consultation
-                    </p>
-                    <p className="text-[11px] text-slate-500">10 Oct 2026</p>
-                  </div>
-                  <span className="text-xs font-semibold text-slate-900">
-                    ₹500.00
-                  </span>
-                </div>
-                <div className="py-2.5 flex justify-between items-center">
-                  <div>
-                    <p className="text-xs font-semibold text-slate-900">
-                      Groceries
-                    </p>
-                    <p className="text-[11px] text-slate-500">8 Oct 2026</p>
-                  </div>
-                  <span className="text-xs font-semibold text-slate-900">
-                    ₹1,250.00
-                  </span>
-                </div>
-                <div className="py-2.5 flex justify-between items-center">
-                  <div>
-                    <p className="text-xs font-semibold text-slate-900">
-                      Electricity Bill
-                    </p>
-                    <p className="text-[11px] text-slate-500">5 Oct 2026</p>
-                  </div>
-                  <span className="text-xs font-semibold text-slate-900">
-                    ₹2,180.00
-                  </span>
-                </div>
-              </>
+              <p className="py-4 text-sm text-slate-500">No expenses recorded for this household.</p>
             )}
           </div>
         </Surface>
@@ -720,86 +707,10 @@ export default function HomePage() {
           </div>
         </Surface>
 
-        {/* Recent activity */}
-        <Surface className="p-5">
-          <SectionHeading
-            icon="clock"
-            tone="slate"
-            title="Recent activity"
-            actionText="View all"
-          />
-          <div className="mt-4 space-y-3 text-xs">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-semibold text-slate-900">
-                  Added expense - ₹2,180.00
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  KSEB Electricity Bill
-                </p>
-              </div>
-              <span className="text-[11px] text-slate-400">2 days ago</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-semibold text-slate-900">
-                  Added commitment
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  KSEB Electricity Bill
-                </p>
-              </div>
-              <span className="text-[11px] text-slate-400">3 days ago</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-semibold text-slate-900">Uploaded document</p>
-              </div>
-              <span className="text-[11px] text-slate-400">5 days ago</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-semibold text-slate-900">Chat session</p>
-                <p className="text-[11px] text-slate-500">
-                  Discussed upcoming expenses
-                </p>
-              </div>
-              <span className="text-[11px] text-slate-400">5 days ago</span>
-            </div>
-          </div>
-        </Surface>
-      </section>
-    </main>
-  );
-}
 
-function pyItemRow(item: any, idx: number) {
-  return (
-    <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
-      <div className="flex items-center gap-3">
-        <div className="w-10 text-slate-400 font-medium">
-          <span className="block text-slate-900 font-semibold">
-            {item.date.split(" ")[0]}
-          </span>
-          <span>{item.date.split(" ")[1]}</span>
-        </div>
-        <span className={`size-2 rounded-full ${item.color}`} />
-        <div>
-          <p className="font-semibold text-slate-900">{item.title}</p>
-          <p className="text-[11px] text-slate-500">{item.time}</p>
-        </div>
-      </div>
-      <span
-        className={`px-2 py-0.5 rounded-md font-semibold text-[10px] ${
-          item.status === "Overdue"
-            ? "bg-rose-100 text-rose-700"
-            : item.status === "Pending"
-            ? "bg-amber-100 text-amber-700"
-            : "bg-blue-100 text-blue-700"
-        }`}
-      >
-        {item.status}
-      </span>
-    </div>
+      </section>
+      </>
+      )}
+    </main>
   );
 }

@@ -73,6 +73,13 @@ def _commitment(family_id, member_id, title, kind, category, due_date):
 @pytest.mark.asyncio(loop_scope="session")
 async def test_judge_household_attention_completion_and_expense_journey(monkeypatch):
     import app.services.chat as chat_module
+    import app.services.composition as composition_module
+    import app.utils.dates as dates_module
+
+    # Keep API date dependencies, chat date resolution, and mutation-triggered
+    # priority refreshes on the same deterministic family-local clock.
+    monkeypatch.setattr(dates_module, "today_in", _frozen_today)
+    monkeypatch.setattr(composition_module, "today_in", _frozen_today)
 
     family_id, other_family_id = uuid4(), uuid4()
     member_id, other_member_id = uuid4(), uuid4()
@@ -184,5 +191,9 @@ async def test_judge_household_attention_completion_and_expense_journey(monkeypa
             await cleanup.commit()
 
 
-async def _async_today():
+def _frozen_today(_timezone=None):
     return TODAY
+
+
+async def _async_today():
+    return _frozen_today()

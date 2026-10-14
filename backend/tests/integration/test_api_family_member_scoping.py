@@ -93,15 +93,26 @@ async def test_read_endpoints_scope_commitments_expenses_documents_priorities_an
                 commitments = await client.get("/api/v1/commitments", params={"family_id": str(family_a)})
                 expenses = await client.get("/api/v1/expenses", params={"family_id": str(family_a)})
                 documents = await client.get("/api/v1/documents", params={"family_id": str(family_a)})
+                valid_member_documents = await client.get(
+                    "/api/v1/documents",
+                    params={"family_id": str(family_a), "member_id": str(member_a)},
+                )
                 foreign_member_documents = await client.get(
                     "/api/v1/documents",
                     params={"family_id": str(family_a), "member_id": str(member_b)},
                 )
+                unknown_member_documents = await client.get(
+                    "/api/v1/documents",
+                    params={"family_id": str(family_a), "member_id": str(uuid4())},
+                )
                 assert commitments.status_code == expenses.status_code == documents.status_code == 200
-                # Current endpoint filters by the supplied UUID but does not check
-                # that the member belongs to this family; it silently returns [] .
-                assert foreign_member_documents.status_code == 200
-                assert foreign_member_documents.json() == []
+                assert valid_member_documents.status_code == 200
+                assert [item["id"] for item in valid_member_documents.json()] == [str(document_a_id)]
+                assert foreign_member_documents.status_code == 400
+                assert foreign_member_documents.json()["code"] == "scope_violation"
+                assert "secret-beta.pdf" not in foreign_member_documents.text
+                assert unknown_member_documents.status_code == 400
+                assert unknown_member_documents.json()["code"] == "not_found"
                 assert [item["id"] for item in commitments.json()] == [str(commitment_a.id)]
                 assert [item["id"] for item in expenses.json()] == [str(expense_a_id)]
                 assert [item["id"] for item in documents.json()] == [str(document_a_id)]

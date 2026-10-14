@@ -1,9 +1,15 @@
 import { apiClient } from "./client";
 
 export interface Priority {
-  title: string;
+  id: string;
+  commitment_id: string | null;
+  notification_type: string;
+  title: string | null;
+  message: string;
   priority: string;
-  reason: string;
+  is_read: boolean;
+  created_at: string;
+  commitment?: Commitment | null;
 }
 
 export interface Commitment {

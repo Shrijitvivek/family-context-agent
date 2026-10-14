@@ -38,6 +38,7 @@ class CommitmentContext(BaseModel):
 class HouseholdContext(BaseModel):
     family_id: UUID
     family_name: str
+    timezone: str
     speaking_member: MemberContext | None
     members: list[MemberContext]
     active_commitments: list[CommitmentContext]
@@ -97,6 +98,7 @@ class ContextService:
         return HouseholdContext(
             family_id=family.id,
             family_name=family.name,
+            timezone=family.timezone,
             speaking_member=speaking,
             members=members,
             active_commitments=[

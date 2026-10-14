@@ -4,7 +4,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.agents.orchestrator import FamilyContextAgent
 from app.agents.state import AgentState
@@ -61,8 +61,15 @@ class EmptyPriorityService:
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_electricity_bill_is_resolved_and_saved_in_postgres():
+async def test_electricity_bill_is_resolved_and_saved_in_postgres(monkeypatch):
     """Verify agent date resolution and real PostgreSQL persistence."""
+    from app.utils import dates as dates_module
+
+    monkeypatch.setattr(
+        dates_module,
+        "today_in",
+        lambda _timezone: date(2026, 10, 14),
+    )
     async with AsyncSessionLocal() as session:
         family = Family(
             id=uuid4(),
@@ -94,33 +101,39 @@ async def test_electricity_bill_is_resolved_and_saved_in_postgres():
             member_id=None,
             conversation_id=None,
             user_message="Electricity bill ₹3,240 due October 18",
+            metadata={"family_timezone": "Asia/Kolkata"},
         )
 
-        result = await agent.run(state)
+        try:
+            result = await agent.run(state)
 
-        assert result.tool_results, (
-            f"Agent did not execute a tool. Message: "
-            f"{result.assistant_message}"
-        )
-        assert result.tool_results[0]["tool"] == "create_commitment"
-
-        tool_result = result.tool_results[0]["result"]
-        assert tool_result["success"] is True, tool_result
-
-        commitment_id = tool_result.get("commitment_id") or tool_result.get(
-            "id"
-        )
-        assert commitment_id is not None, tool_result
-
-        saved_commitment = await session.scalar(
-            select(Commitment).where(
-                Commitment.id == commitment_id,
-                Commitment.family_id == family_id,
+            assert result.tool_results, (
+                f"Agent did not execute a tool. Message: "
+                f"{result.assistant_message}"
             )
-        )
+            assert result.tool_results[0]["tool"] == "create_commitment"
 
-        assert saved_commitment is not None
-        assert saved_commitment.title == "Electricity bill"
-        assert saved_commitment.commitment_type == "BILL"
-        assert saved_commitment.amount == Decimal("3240.00")
-        assert saved_commitment.due_date == date(2026, 10, 18)
+            tool_result = result.tool_results[0]["result"]
+            assert tool_result["success"] is True, tool_result
+
+            commitment_id = tool_result.get("commitment_id") or tool_result.get(
+                "id"
+            )
+            assert commitment_id is not None, tool_result
+
+            saved_commitment = await session.scalar(
+                select(Commitment).where(
+                    Commitment.id == commitment_id,
+                    Commitment.family_id == family_id,
+                )
+            )
+
+            assert saved_commitment is not None
+            assert saved_commitment.title == "Electricity bill"
+            assert saved_commitment.commitment_type == "BILL"
+            assert saved_commitment.amount == Decimal("3240.00")
+            assert saved_commitment.due_date == date(2026, 10, 18)
+        finally:
+            await session.rollback()
+            await session.execute(delete(Family).where(Family.id == family_id))
+            await session.commit()

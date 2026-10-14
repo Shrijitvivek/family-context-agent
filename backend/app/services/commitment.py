@@ -1,10 +1,14 @@
 """Business operations backing the commitment agent tools and API."""
 
+import re
 from uuid import UUID
 
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.constants import CommitmentStatus
 from app.core.exceptions import (
+    AmbiguousCommitmentError,
+    ConflictError,
     DependencyBlockedError,
     DuplicateCommitmentError,
     PersistenceError,
@@ -20,6 +24,27 @@ from app.schemas.commitment import (
 )
 from app.services.dependency import DependencyService
 from app.services.priority import PriorityRefresher
+
+
+_UPDATE_REFERENCE_STOP_WORDS = frozenset(
+    {
+        "a", "an", "as", "at", "be", "before", "complete", "completed",
+        "do", "done", "for", "i", "is", "it", "mark", "marked", "my",
+        "of", "on", "our", "paid", "pay", "please", "the", "this", "that",
+        "to", "update", "was", "with", "move", "reschedule", "change",
+        "today", "yesterday",
+    }
+)
+
+
+def _reference_tokens(value: str) -> set[str]:
+    if re.search(r"\b(?:move|reschedule|change|set)\b", value, re.IGNORECASE):
+        value = re.split(r"\bto\b", value, maxsplit=1, flags=re.IGNORECASE)[0]
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", value.casefold())
+        if token not in _UPDATE_REFERENCE_STOP_WORDS
+    }
 
 
 class CommitmentService:
@@ -113,8 +138,70 @@ class CommitmentService:
 
         return await self._repository.search(query)
 
+    async def find_update_candidates(
+        self,
+        *,
+        family_id: UUID,
+        member_id: UUID | None,
+        reference: str,
+    ) -> list[Commitment]:
+        """Resolve a chat reference against family/member-scoped items.
+
+        Matching is deliberately conservative: every usable reference term must
+        be represented by a candidate. This prefers asking for clarification over
+        trusting a model-selected ID.
+        """
+
+        candidates = await self.search(
+            SearchCommitmentsQuery(
+                family_id=family_id,
+                member_id=member_id,
+            )
+        )
+        terms = _reference_tokens(reference)
+        if not terms:
+            return candidates
+
+        matches: list[Commitment] = []
+        for item in candidates:
+            searchable = " ".join(
+                part
+                for part in (
+                    item.title,
+                    item.description or "",
+                    item.category or "",
+                    item.commitment_type or "",
+                    str(item.amount) if item.amount is not None else "",
+                    (
+                        item.due_date.strftime("%B %d %Y")
+                        if item.due_date
+                        else ""
+                    ),
+                )
+                if part
+            )
+            candidate_terms = _reference_tokens(searchable)
+            if terms <= candidate_terms:
+                matches.append(item)
+
+        return matches
+
     async def update(self, payload: CommitmentUpdate) -> Commitment:
-        """Update a commitment while enforcing dependency rules."""
+        """Update a commitment while enforcing lifecycle and dependency rules."""
+
+        # Terminal commitments are immutable through every caller (REST, tools,
+        # and internal services). Check before evaluating or applying updates.
+        existing = await self._repository.get(
+            payload.family_id,
+            payload.commitment_id,
+        )
+        if existing.status in {
+            CommitmentStatus.COMPLETED.value,
+            CommitmentStatus.CANCELLED.value,
+        }:
+            raise ConflictError(
+                f"'{existing.title}' is already {existing.status} and cannot be modified."
+            )
 
         if (
             payload.status is not None

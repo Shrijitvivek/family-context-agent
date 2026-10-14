@@ -177,26 +177,30 @@ async def test_chat_search_then_update_changes_same_unambiguous_commitment(monke
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_chat_update_tool_does_not_enforce_ambiguity_after_multiple_matches(monkeypatch):
-    """Reproduce whether a tool caller can bypass the documented clarify-first rule."""
+async def test_chat_requires_clarification_for_ambiguous_update_and_accepts_explicit_choice(monkeypatch):
     import app.services.chat as chat_module
 
-    family_id, member_id = uuid4(), uuid4()
+    family_id, other_family_id = uuid4(), uuid4()
+    member_id, other_member_id = uuid4(), uuid4()
     october = _bill(family_id, member_id, "Electricity Bill", date(2026, 10, 18))
     november = _bill(family_id, member_id, "Electricity Bill", date(2026, 11, 18))
+    foreign_bill = _bill(other_family_id, other_member_id, "Electricity Bill", date(2026, 10, 19))
     # This deliberately scripts a model that ignores the search result's warning.
     model = ScriptedChatModel([
         _tool("search_commitments", {"title_query": "electricity bill", "status": "PENDING"}, "search"),
         _tool("update_commitment", {"commitment_id": str(october.id), "status": "COMPLETED"}, "unsafe-update"),
-        AIResponse(content="Marked it paid.", tool_calls=[]),
+        _tool("update_commitment", {"commitment_id": str(october.id), "status": "COMPLETED"}, "explicit-update"),
+        AIResponse(content="Marked the October electricity bill as paid.", tool_calls=[]),
     ])
     monkeypatch.setattr(chat_module, "AIModelClient", lambda: model)
 
     async with AsyncSessionLocal() as session:
         session.add_all([
             Family(id=family_id, name="Ambiguity Family"),
+            Family(id=other_family_id, name="Other Family"),
             FamilyMember(id=member_id, family_id=family_id, name="Rahul", relationship_type="PARENT"),
-            october, november,
+            FamilyMember(id=other_member_id, family_id=other_family_id, name="Other Member", relationship_type="PARENT"),
+            october, november, foreign_bill,
         ])
         await session.flush()
         try:
@@ -206,12 +210,29 @@ async def test_chat_update_tool_does_not_enforce_ambiguity_after_multiple_matche
             )
             await session.refresh(october)
             await session.refresh(november)
+            assert result.requires_clarification is True
             assert result.tool_results[0]["result"]["count"] == 2
-            # Current behavior: the subsequent update is accepted despite ambiguity.
+            assert result.tool_results[1]["result"]["success"] is False
+            assert "Which one do you mean?" in result.assistant_message
+            assert "18 Oct 2026" in result.assistant_message
+            assert "18 Nov 2026" in result.assistant_message
+            assert "Other Family" not in result.assistant_message
+            assert october.status == CommitmentStatus.PENDING.value
+            assert november.status == CommitmentStatus.PENDING.value
+
+            explicit = await ChatService(session).process_message(
+                family_id=family_id,
+                member_id=member_id,
+                conversation_id=result.conversation_id,
+                message="I paid the October 18 electricity bill.",
+            )
+            await session.refresh(october)
+            await session.refresh(november)
+            assert explicit.tool_results[0]["result"]["success"] is True
             assert october.status == CommitmentStatus.COMPLETED.value
             assert november.status == CommitmentStatus.PENDING.value
         finally:
-            await _cleanup(session, [family_id])
+            await _cleanup(session, [family_id, other_family_id])
 
 
 @pytest.mark.asyncio(loop_scope="session")

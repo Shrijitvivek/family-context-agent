@@ -17,6 +17,10 @@ from app.repositories.expense import ExpenseRepository
 from app.repositories.family import FamilyRepository
 from app.repositories.notification import NotificationRepository
 from app.services.commitment import CommitmentService
+from app.services.composition import (
+    create_commitment_service,
+    create_dependency_service,
+)
 from app.services.demo import DemoService
 from app.services.dependency import DependencyService
 from app.services.document import DocumentService
@@ -41,7 +45,7 @@ async def get_expense_service(
 async def get_commitment_service(
     session: DbSession,
 ) -> CommitmentService:
-    return CommitmentService(CommitmentRepository(session))
+    return create_commitment_service(session)
 
 
 async def get_family_service(
@@ -53,7 +57,7 @@ async def get_family_service(
 async def get_dependency_service(
     session: DbSession,
 ) -> DependencyService:
-    return DependencyService(CommitmentRepository(session))
+    return create_dependency_service(session)
 
 
 async def get_priority_service(
@@ -75,9 +79,7 @@ async def get_document_service(
     return DocumentService(
         documents=DocumentRepository(session),
         commitments=CommitmentRepository(session),
-        commitment_service=CommitmentService(
-            CommitmentRepository(session)
-        ),
+        commitment_service=create_commitment_service(session),
         storage=LocalStorage(),
         model=AIModelClient(),
         allowed_types=settings.allowed_upload_type_set,
@@ -110,9 +112,7 @@ async def get_tool_registry(
         expense_service=ExpenseService(
             ExpenseRepository(session)
         ),
-        commitment_service=CommitmentService(
-            CommitmentRepository(session)
-        ), priority_service=PriorityService(
+        commitment_service=create_commitment_service(session), priority_service=PriorityService(
             commitments=CommitmentRepository(session),
             notifications=NotificationService(
                 NotificationRepository(session)
@@ -129,9 +129,7 @@ async def get_family_context_agent(
             expense_service=ExpenseService(
                 ExpenseRepository(session)
             ),
-            commitment_service=CommitmentService(
-                CommitmentRepository(session)
-            ),priority_service=PriorityService(
+            commitment_service=create_commitment_service(session),priority_service=PriorityService(
                 commitments=CommitmentRepository(session),
                 notifications=NotificationService(
                     NotificationRepository(session)
