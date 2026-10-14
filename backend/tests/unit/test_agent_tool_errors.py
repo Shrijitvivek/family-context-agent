@@ -54,7 +54,13 @@ class FakeToolRegistry:
 async def test_agent_run_records_tool_errors_and_keeps_conversation_flow(error) -> None:
     family_id = uuid4()
     registry = FakeToolRegistry(error)
-    ai = FakeAIClient("create_commitment", {"title": "Electricity bill"})
+    ai = FakeAIClient(
+    "create_commitment",
+    {
+        "commitment_type": "TASK",
+        "title": "Electricity bill",
+    },
+)
     agent = FamilyContextAgent(ai, registry)  # type: ignore[arg-type]
     state = AgentState(
         family_id=family_id,

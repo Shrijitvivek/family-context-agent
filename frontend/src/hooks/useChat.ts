@@ -1,21 +1,12 @@
-
 import { useCallback, useEffect, useState } from "react";
 
-import {
-  getChatHistory,
-  sendMessage,
-} from "../services/api/chat";
+import { getChatHistory, sendMessage } from "../services/api/chat";
 import type { ChatMessage } from "../components/chat/MessageList";
 
-const getStorageKey = (
-  familyId: string,
-  memberId: string | null,
-) => `family-chat:${familyId}:${memberId ?? "all-family"}`;
+const getStorageKey = (familyId: string, memberId: string | null) =>
+  `family-chat:${familyId}:${memberId ?? "all-family"}`;
 
-export function useChat(
-  familyId: string,
-  memberId: string | null,
-) {
+export function useChat(familyId: string, memberId: string | null) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string>();
   const [loading, setLoading] = useState(false);
@@ -40,23 +31,19 @@ export function useChat(
       const savedConversationId = localStorage.getItem(storageKey);
 
       if (!savedConversationId) {
-        if (!cancelled) {
-          setHistoryLoading(false);
-        }
+        setHistoryLoading(false);
         return;
       }
 
       setHistoryLoading(true);
 
       try {
-        const history = await getChatHistory(
-          savedConversationId,
-          familyId,
-        );
+        const history = await getChatHistory(savedConversationId, familyId);
 
         if (cancelled) return;
 
         setConversationId(history.conversation_id);
+
         setMessages(
           history.messages.map((message) => ({
             id: message.id,
@@ -64,10 +51,39 @@ export function useChat(
             content: message.content,
           })),
         );
-      } catch (error) {
+      } catch (error: unknown) {
         console.error("CHAT HISTORY ERROR:", error);
 
-        if (!cancelled) {
+        if (cancelled) return;
+
+        const err = error as {
+          response?: {
+            status?: number;
+            data?: {
+              code?: string;
+              message?: string;
+              detail?: unknown;
+            };
+          };
+          message?: string;
+        };
+
+        const status = err.response?.status;
+        const responseData = err.response?.data;
+
+        const isMissingConversation =
+          status === 400 ||
+          status === 404 ||
+          responseData?.code === "not_found" ||
+          responseData?.message === "Conversation was not found." ||
+          err.message?.includes("Conversation was not found");
+
+        if (isMissingConversation) {
+          localStorage.removeItem(storageKey);
+          setConversationId(undefined);
+          setMessages([]);
+          setError(null);
+        } else {
           setError("Unable to load your previous conversation.");
         }
       } finally {
@@ -86,12 +102,7 @@ export function useChat(
 
   const sendChatMessage = useCallback(
     async (message: string, documentId?: string) => {
-      if (
-        !familyId ||
-        !message.trim() ||
-        loading ||
-        historyLoading
-      ) {
+      if (!familyId || !message.trim() || loading || historyLoading) {
         return;
       }
 
@@ -117,17 +128,14 @@ export function useChat(
         const response = await sendMessage({
           family_id: familyId,
           ...(memberId ? { member_id: memberId } : {}),
-          ...(conversationId
-            ? { conversation_id: conversationId }
-            : {}),
+          ...(conversationId ? { conversation_id: conversationId } : {}),
           message,
           ...(documentId ? { document_id: documentId } : {}),
         });
 
         console.log("Chat response:", response);
 
-        const nextConversationId =
-          response.conversation_id ?? conversationId;
+        const nextConversationId = response.conversation_id ?? conversationId;
 
         if (nextConversationId) {
           setConversationId(nextConversationId);
@@ -145,7 +153,7 @@ export function useChat(
         };
 
         setMessages((current) => [...current, assistantMessage]);
-      } catch (error) {
+      } catch (error: unknown) {
         console.error("CHAT REQUEST ERROR:", error);
 
         if (error instanceof Error) {
@@ -157,13 +165,7 @@ export function useChat(
         setLoading(false);
       }
     },
-    [
-      familyId,
-      memberId,
-      conversationId,
-      loading,
-      historyLoading,
-    ],
+    [familyId, memberId, conversationId, loading, historyLoading],
   );
 
   return {

@@ -14,6 +14,7 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "create_commitment": (
         "commitment_type",
         "title",
+        
     ),
     "update_commitment": (
         "commitment_id",
@@ -36,6 +37,7 @@ FIELD_QUESTIONS: dict[str, str] = {
         "(for example, bill, appointment, task, or deadline)?"
     ),
     "title": "What should I call this commitment?",
+    "due_date": "When is this bill or commitment due?",
     "commitment_id": "Which commitment would you like to update?",
     "source_commitment_id": "Which commitment must be completed first?",
     "target_commitment_id": "Which commitment depends on it?",
@@ -45,6 +47,7 @@ FIELD_QUESTIONS: dict[str, str] = {
 }
 
 
+
 def find_missing_fields(
     tool_name: str,
     arguments: dict[str, Any],
@@ -52,6 +55,20 @@ def find_missing_fields(
     """Return required fields that have not been supplied."""
 
     required = REQUIRED_FIELDS.get(tool_name, ())
+
+    if tool_name == "create_commitment":
+        commitment_type = str(
+            arguments.get("commitment_type", "")
+        ).upper()
+
+        if commitment_type in {
+            "BILL",
+            "APPOINTMENT",
+            "LAB_TEST",
+            "DEADLINE",
+            "RENEWAL",
+        }:
+            required = (*required, "due_date")
 
     missing: list[str] = []
 
@@ -66,6 +83,7 @@ def find_missing_fields(
             missing.append(field)
 
     return missing
+
 
 
 def build_clarification(
