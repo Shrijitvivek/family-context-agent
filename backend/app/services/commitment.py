@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.exceptions import (
+    ConflictError,
     DependencyBlockedError,
     DuplicateCommitmentError,
     PersistenceError,
@@ -37,7 +38,6 @@ class CommitmentService:
 
     async def create(self, payload: CommitmentCreate) -> Commitment:
         """Create a new commitment unless it duplicates an active family record."""
-
         await self._repository.assert_scope(
             payload.family_id,
             member_id=payload.member_id,
@@ -105,7 +105,6 @@ class CommitmentService:
         query: SearchCommitmentsQuery,
     ) -> list[Commitment]:
         """Find matching commitments after checking family scope."""
-
         await self._repository.assert_scope(
             query.family_id,
             member_id=query.member_id,
@@ -115,6 +114,15 @@ class CommitmentService:
 
     async def update(self, payload: CommitmentUpdate) -> Commitment:
         """Update a commitment while enforcing dependency rules."""
+        existing = await self._repository.get(
+            payload.family_id,
+            payload.commitment_id,
+        )
+
+        if existing.status in ("COMPLETED", "CANCELLED"):
+            raise ConflictError(
+                "Completed or cancelled commitments cannot be modified."
+            )
 
         if (
             payload.status is not None
@@ -151,6 +159,7 @@ class CommitmentService:
         family_id: UUID,
         commitment_id: UUID,
     ) -> Commitment:
+        """Get a commitment belonging to the specified family."""
         return await self._repository.get(
             family_id,
             commitment_id,
@@ -161,7 +170,6 @@ class CommitmentService:
         payload: CommitmentDependencyCreate,
     ) -> CommitmentDependency:
         """Create a dependency after duplicate and cycle checks."""
-
         return await DependencyService(
             self._repository,
             self._on_change,
