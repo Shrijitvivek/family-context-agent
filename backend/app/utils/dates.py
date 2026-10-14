@@ -206,3 +206,36 @@ def describe_due(due_date: date, today: date) -> str:
     if days == 1:
         return "due tomorrow"
     return f"due in {days} days"
+
+
+def resolve_commitment_due_date(
+    user_message: str,
+    timezone: str,
+    *,
+    today: date | None = None,
+) -> date:
+    """Resolve a commitment due date without defaulting to today."""
+
+    reference_date = today if today is not None else today_in(timezone)
+
+    resolved = resolve_expense_date(
+        user_message,
+        timezone,
+        today=reference_date,
+    )
+
+    # The expense resolver defaults to today when no date is found.
+    # Require an actual date expression for commitment due dates.
+    has_date_expression = bool(
+        _EXPLICIT_DATE_RE.search(user_message)
+        or _RELATIVE_BASE_RE.search(user_message)
+        or _RELATIVE_AMOUNT_RE.search(user_message)
+        or _COMPOUND_RELATIVE_RE.search(user_message)
+        or _RELATIVE_WORD_RE.search(user_message)
+    )
+
+    if not has_date_expression:
+        raise ValueError("A commitment due date was not provided.")
+
+    return resolved
+
