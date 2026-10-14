@@ -1,7 +1,9 @@
-﻿import json
-from datetime import date
-from typing import Any
+﻿
+"""Orchestrate AI responses and family-context tool execution."""
 
+import json
+
+from app.agents.clarification import build_clarification
 from app.agents.prompts import SYSTEM_PROMPT
 from app.agents.state import AgentState
 from app.clients.ai_model import AIModelClient
@@ -9,6 +11,7 @@ from app.core.config import get_settings
 from app.tools.registry import ToolRegistry
 from app.utils.dates import (
     contains_relative_expense_date,
+    resolve_commitment_due_date,
     resolve_expense_date,
     today_in,
 )
@@ -28,27 +31,42 @@ _CONFIRMATION_REPLIES = {
     "okay",
 }
 
+_DATE_REQUIRED_COMMITMENT_TYPES = {
+    "BILL",
+    "APPOINTMENT",
+    "LAB_TEST",
+    "DEADLINE",
+    "RENEWAL",
+}
+
 
 def _expense_date_source(state: AgentState) -> str:
-    """Preserve date intent through a pending expense clarification exchange."""
-
+    """Preserve date intent through an expense clarification exchange."""
     history = list(state.history)
+
     if (
         history
         and history[-1].get("role") == "user"
-        and history[-1].get("content", "").strip() == state.user_message.strip()
+        and history[-1].get("content", "").strip()
+        == state.user_message.strip()
     ):
         history.pop()
 
     last_assistant = next(
-        (item for item in reversed(history) if item.get("role") == "assistant"),
+        (
+            item
+            for item in reversed(history)
+            if item.get("role") == "assistant"
+        ),
         None,
     )
+
     if last_assistant is None:
         return state.user_message
 
     question = last_assistant.get("content", "")
     normalized_question = question.casefold()
+
     clarification_terms = (
         "expense",
         "spend",
@@ -59,18 +77,28 @@ def _expense_date_source(state: AgentState) -> str:
         "did you mean",
         "which one",
     )
-    if "?" not in question or not any(term in normalized_question for term in clarification_terms):
+
+    if "?" not in question or not any(
+        term in normalized_question for term in clarification_terms
+    ):
         return state.user_message
 
     user_messages = [state.user_message]
+
     for item in reversed(history):
         role = item.get("role")
+
         if role == "assistant":
             if "?" not in item.get("content", ""):
                 break
+
         elif role == "user":
             content = item.get("content", "")
-            if content.strip().casefold().rstrip(".! ") not in _CONFIRMATION_REPLIES:
+
+            if (
+                content.strip().casefold().rstrip(".! ")
+                not in _CONFIRMATION_REPLIES
+            ):
                 user_messages.append(content)
 
     return "\n".join(reversed(user_messages))
@@ -96,23 +124,23 @@ class FamilyContextAgent:
         if state.household_context:
             context_section += f"""
 
-        CURRENT HOUSEHOLD CONTEXT
-        =========================
+CURRENT HOUSEHOLD CONTEXT
+=========================
 
-        The following information comes from the application's
-        database and represents the current household state.
+The following information comes from the application's
+database and represents the current household state.
 
-        {state.household_context}
+{state.household_context}
 
-        Use this information when answering questions about
-        the family.
+Use this information when answering questions about
+the family.
 
-        Do not invent household information that is not present
-        in this context or available through tools.
+Do not invent household information that is not present
+in this context or available through tools.
 
-        If the context is insufficient, use the appropriate tool
-        or ask the user for clarification.
-        """
+If the context is insufficient, use the appropriate tool
+or ask the user for clarification.
+"""
 
         messages = [
             {
@@ -129,7 +157,6 @@ class FamilyContextAgent:
                 }
             )
 
-        # Add attached document context for the AI.
         document = state.metadata.get("document")
 
         if document:
@@ -163,8 +190,6 @@ class FamilyContextAgent:
                 tools=tool_definitions,
             )
 
-            # No tool requested by the AI.
-            # Return the normal assistant response.
             if not response.tool_calls:
                 state.assistant_message = (
                     response.content
@@ -172,7 +197,6 @@ class FamilyContextAgent:
                 )
                 return state
 
-            # Add the assistant's tool request to the conversation.
             assistant_message = {
                 "role": "assistant",
                 "content": response.content,
@@ -195,33 +219,38 @@ class FamilyContextAgent:
 
             messages.append(assistant_message)
 
-            # Execute every tool requested by the AI.
             for tool_call in response.tool_calls:
                 arguments = dict(tool_call.arguments)
 
-                # Application-owned context
+                # Add application-owned family context.
                 arguments["family_id"] = str(state.family_id)
 
-                if tool_call.name in {"add_expense", "create_commitment"}:
+                if tool_call.name in {
+                    "add_expense",
+                    "create_commitment",
+                }:
                     if state.member_id is not None:
                         arguments["member_id"] = str(state.member_id)
 
-                try:
-                    if tool_call.name == "add_expense":
+                # Resolve dates before checking missing fields.
+                if tool_call.name == "add_expense":
+                    try:
                         resolved_date = resolve_expense_date(
                             _expense_date_source(state),
                             get_settings().family_timezone,
                         )
-                        arguments["expense_date"] = resolved_date.isoformat()
+                    except ValueError as exc:
+                        state.assistant_message = str(exc)
+                        return state
+                    arguments["expense_date"] = (
+                        resolved_date.isoformat()
+                    )
 
-                    if tool_call.name == "get_expense_records":
-                        if state.member_id is not None:
-                            arguments["member_id"] = str(state.member_id)
+                elif tool_call.name == "get_expense_records":
+                    if state.member_id is not None:
+                        arguments["member_id"] = str(state.member_id)
 
-                    if (
-                        tool_call.name == "get_expense_records"
-                        and contains_relative_expense_date(state.user_message)
-                    ):
+                    if contains_relative_expense_date(state.user_message):
                         resolved_date = resolve_expense_date(
                             state.user_message,
                             get_settings().family_timezone,
@@ -229,6 +258,45 @@ class FamilyContextAgent:
                         arguments["start_date"] = resolved_date.isoformat()
                         arguments["end_date"] = resolved_date.isoformat()
 
+                elif tool_call.name == "create_commitment":
+                    commitment_type = str(
+                        arguments.get("commitment_type", "")
+                    ).upper()
+
+                    if commitment_type in _DATE_REQUIRED_COMMITMENT_TYPES:
+                        try:
+                            resolved_due_date = (
+                                resolve_commitment_due_date(
+                                    state.user_message,
+                                    get_settings().family_timezone,
+                                )
+                            )
+                        except ValueError:
+                            # A missing or unsupported date must not
+                            # silently default to today. Allow the
+                            # clarification layer to ask for a date.
+                            arguments.pop("due_date", None)
+                        else:
+                            arguments["due_date"] = (
+                                resolved_due_date.isoformat()
+                            )
+
+                    clarification = build_clarification(
+                        tool_call.name,
+                        arguments,
+                    )
+
+                    if (
+                        clarification is not None
+                        and clarification.clarification is not None
+                    ):
+                        state.assistant_message = (
+                            clarification.clarification.question
+                        )
+                        return state
+
+                # Execute the tool after validation.
+                try:
                     result = await self.tool_registry.dispatch(
                         tool_call.name,
                         arguments,
@@ -253,8 +321,6 @@ class FamilyContextAgent:
                     }
                 )
 
-                # Send the tool result back to the AI so it can
-                # generate the final natural-language response.
                 messages.append(
                     {
                         "role": "tool",
@@ -266,7 +332,6 @@ class FamilyContextAgent:
                     }
                 )
 
-        # Safety fallback if the AI keeps requesting tools.
         state.assistant_message = (
             "I couldn't complete the request safely. "
             "Please try again."

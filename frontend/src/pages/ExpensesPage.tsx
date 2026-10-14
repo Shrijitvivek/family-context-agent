@@ -483,7 +483,7 @@ export default function ExpensesPage() {
 
                   {/* Payer */}
                   <div className="hidden sm:block text-xs text-slate-600 truncate">
-                    {item.family_member ? item.family_member : "—"}
+                    {item.family_member ?? "Not assigned"}
                   </div>
 
                   {/* Amount */}

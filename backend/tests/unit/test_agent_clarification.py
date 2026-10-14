@@ -1,3 +1,4 @@
+
 from app.agents.clarification import (
     build_clarification,
     find_missing_fields,
@@ -64,12 +65,43 @@ def test_commitment_requires_type_and_title() -> None:
     ]
 
 
-def test_complete_commitment_does_not_need_clarification() -> None:
+def test_bill_without_due_date_needs_clarification() -> None:
     decision = build_clarification(
         "create_commitment",
         {
             "commitment_type": "BILL",
             "title": "Electricity bill",
+        },
+    )
+
+    assert decision is not None
+    assert decision.action == "clarification"
+    assert decision.clarification is not None
+    assert decision.clarification.question == (
+        "When is this bill or commitment due?"
+    )
+    assert "due_date" in decision.clarification.missing_fields
+
+
+def test_bill_with_due_date_does_not_need_clarification() -> None:
+    decision = build_clarification(
+        "create_commitment",
+        {
+            "commitment_type": "BILL",
+            "title": "Electricity bill",
+            "due_date": "2026-10-18",
+        },
+    )
+
+    assert decision is None
+
+
+def test_task_without_due_date_does_not_need_clarification() -> None:
+    decision = build_clarification(
+        "create_commitment",
+        {
+            "commitment_type": "TASK",
+            "title": "Clean the house",
         },
     )
 

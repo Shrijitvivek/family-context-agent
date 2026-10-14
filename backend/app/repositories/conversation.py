@@ -1,5 +1,5 @@
 """Database access for conversations and their messages."""
-
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import select
@@ -25,7 +25,7 @@ class ConversationRepository:
         return conversation
 
     async def add_message(self, conversation_id: UUID, role: str, content: str) -> Message:
-        message = Message(conversation_id=conversation_id, role=role, content=content)
+        message = Message(conversation_id=conversation_id, role=role, content=content, created_at=datetime.now(timezone.utc),)
         self._session.add(message)
         await self._session.flush()
         await self._session.refresh(message)

@@ -5,12 +5,12 @@ import httpx
 import pytest
 
 from app.clients.ai_model import AIModelClient
+from app.core.exceptions import AIModelError
 
 
 @pytest.mark.asyncio
 async def test_ai_model_client_normal_response():
     client = AIModelClient.__new__(AIModelClient)
-
     client.api_key = "test-key"
     client.base_url = "https://example.com/v1"
     client.model = "test-model"
@@ -29,7 +29,6 @@ async def test_ai_model_client_normal_response():
         "POST",
         "https://example.com/v1/chat/completions",
     )
-
     response = httpx.Response(
         200,
         json=mock_response,
@@ -39,10 +38,8 @@ async def test_ai_model_client_normal_response():
     with patch(
         "app.clients.ai_model.httpx.AsyncClient"
     ) as mock_client:
-
         mock_http = AsyncMock()
         mock_http.post.return_value = response
-
         mock_client.return_value.__aenter__.return_value = (
             mock_http
         )
@@ -57,14 +54,12 @@ async def test_ai_model_client_normal_response():
         )
 
     assert result.content == "Your expense was recorded."
-
     assert result.tool_calls == []
 
 
 @pytest.mark.asyncio
 async def test_ai_model_client_tool_call_response():
     client = AIModelClient.__new__(AIModelClient)
-
     client.api_key = "test-key"
     client.base_url = "https://example.com/v1"
     client.model = "test-model"
@@ -99,7 +94,6 @@ async def test_ai_model_client_tool_call_response():
         "POST",
         "https://example.com/v1/chat/completions",
     )
-
     response = httpx.Response(
         200,
         json=mock_response,
@@ -109,10 +103,8 @@ async def test_ai_model_client_tool_call_response():
     with patch(
         "app.clients.ai_model.httpx.AsyncClient"
     ) as mock_client:
-
         mock_http = AsyncMock()
         mock_http.post.return_value = response
-
         mock_client.return_value.__aenter__.return_value = (
             mock_http
         )
@@ -135,17 +127,169 @@ async def test_ai_model_client_tool_call_response():
         )
 
     assert result.content is None
-
     assert len(result.tool_calls) == 1
 
     tool_call = result.tool_calls[0]
 
     assert tool_call.name == "add_expense"
-
     assert tool_call.call_id == "call_123"
-
     assert tool_call.arguments == {
         "amount": "850.00",
         "category": "GROCERIES",
         "expense_date": "2026-09-27",
     }
+
+
+@pytest.mark.asyncio
+async def test_ai_model_client_timeout():
+    client = AIModelClient.__new__(AIModelClient)
+    client.api_key = "test-key"
+    client.base_url = "https://example.com/v1"
+    client.model = "test-model"
+
+    with patch(
+        "app.clients.ai_model.httpx.AsyncClient"
+    ) as mock_client:
+        mock_http = AsyncMock()
+        mock_http.post.side_effect = httpx.TimeoutException(
+            "Request timed out"
+        )
+        mock_client.return_value.__aenter__.return_value = (
+            mock_http
+        )
+
+        with pytest.raises(
+            AIModelError,
+            match="timed out",
+        ):
+            await client.chat(
+                messages=[
+                    {"role": "user", "content": "Hello"}
+                ]
+            )
+
+
+@pytest.mark.asyncio
+async def test_ai_model_client_authentication_failure():
+    client = AIModelClient.__new__(AIModelClient)
+    client.api_key = "test-key"
+    client.base_url = "https://example.com/v1"
+    client.model = "test-model"
+
+    request = httpx.Request(
+        "POST",
+        "https://example.com/v1/chat/completions",
+    )
+    response = httpx.Response(401, request=request)
+
+    with patch(
+        "app.clients.ai_model.httpx.AsyncClient"
+    ) as mock_client:
+        mock_http = AsyncMock()
+        mock_http.post.return_value = response
+        mock_client.return_value.__aenter__.return_value = (
+            mock_http
+        )
+
+        with pytest.raises(
+            AIModelError,
+            match="authentication",
+        ):
+            await client.chat(
+                messages=[
+                    {"role": "user", "content": "Hello"}
+                ]
+            )
+
+
+@pytest.mark.asyncio
+async def test_ai_model_client_rate_limit():
+    client = AIModelClient.__new__(AIModelClient)
+    client.api_key = "test-key"
+    client.base_url = "https://example.com/v1"
+    client.model = "test-model"
+
+    request = httpx.Request(
+        "POST",
+        "https://example.com/v1/chat/completions",
+    )
+    response = httpx.Response(429, request=request)
+
+    with patch(
+        "app.clients.ai_model.httpx.AsyncClient"
+    ) as mock_client:
+        mock_http = AsyncMock()
+        mock_http.post.return_value = response
+        mock_client.return_value.__aenter__.return_value = (
+            mock_http
+        )
+
+        with pytest.raises(
+            AIModelError,
+            match="rate limit",
+        ):
+            await client.chat(
+                messages=[
+                    {"role": "user", "content": "Hello"}
+                ]
+            )
+
+
+@pytest.mark.asyncio
+async def test_ai_model_client_rejects_malformed_tool_arguments():
+    client = AIModelClient.__new__(AIModelClient)
+    client.api_key = "test-key"
+    client.base_url = "https://example.com/v1"
+    client.model = "test-model"
+
+    mock_response = {
+        "choices": [
+            {
+                "message": {
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_bad",
+                            "type": "function",
+                            "function": {
+                                "name": "add_expense",
+                                "arguments": '{"amount": ',
+                            },
+                        }
+                    ],
+                }
+            }
+        ]
+    }
+
+    request = httpx.Request(
+        "POST",
+        "https://example.com/v1/chat/completions",
+    )
+    response = httpx.Response(
+        200,
+        json=mock_response,
+        request=request,
+    )
+
+    with patch(
+        "app.clients.ai_model.httpx.AsyncClient"
+    ) as mock_client:
+        mock_http = AsyncMock()
+        mock_http.post.return_value = response
+        mock_client.return_value.__aenter__.return_value = (
+            mock_http
+        )
+
+        with pytest.raises(
+            AIModelError,
+            match="malformed tool arguments",
+        ):
+            await client.chat(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": "Record an expense",
+                    }
+                ]
+            )

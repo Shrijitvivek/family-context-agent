@@ -31,6 +31,7 @@ export default function AppShell({ children }: AppShellProps) {
 
   const handleFamilyChange = (familyId: string) => {
     setSelectedFamilyId(familyId);
+    localStorage.setItem("selectedFamilyId", familyId);
     setMobileMenuOpen(false);
   };
 
