@@ -55,7 +55,7 @@ class ExpenseRead(BaseModel):
     merchant: str | None
     description: str | None
     expense_date: date
-    source_type: SourceType | None = None
+    source_type: SourceType
     created_at: datetime
 
 
@@ -68,7 +68,6 @@ class ExpenseSummaryQuery(BaseModel):
 
     family_id: UUID
     category: str | None = Field(default=None, max_length=50)
-    search_term: str | None = Field(default=None, min_length=1, max_length=100)
     member_id: UUID | None = None
     start_date: date | None = None
     end_date: date | None = None
@@ -77,16 +76,6 @@ class ExpenseSummaryQuery(BaseModel):
     @classmethod
     def normalise_optional_category(cls, value: str | None) -> str | None:
         return _normalise_category(value) if value is not None else None
-
-    @field_validator("search_term")
-    @classmethod
-    def normalise_search_term(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalised = value.strip()
-        if not normalised:
-            raise ValueError("search_term cannot be blank")
-        return normalised
 
     @model_validator(mode="after")
     def check_date_range(self) -> "ExpenseSummaryQuery":
@@ -111,11 +100,3 @@ class AddExpenseToolResult(BaseModel):
 
 class ExpenseSummaryToolResult(ExpenseSummary):
     """Compact result returned to the agent by ``get_expense_summary``."""
-
-
-class ExpenseRecordsToolResult(BaseModel):
-    success: Literal[True] = True
-    search_term: str
-    start_date: date | None = None
-    end_date: date | None = None
-    expenses: list[ExpenseRead] = Field(default_factory=list)

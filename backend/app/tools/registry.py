@@ -18,10 +18,7 @@ from app.schemas.commitment import (
     GetFamilyPrioritiesQuery,
     SearchCommitmentsQuery,
 )
-from app.schemas.expense import (
-    ExpenseCreate,
-    ExpenseSummaryQuery,
-)
+from app.schemas.expense import ExpenseCreate, ExpenseSummaryQuery
 from app.services.commitment import CommitmentService
 from app.services.document import DocumentService
 from app.services.expense import ExpenseService
@@ -42,10 +39,8 @@ from app.tools.dependency_tools import (
 )
 from app.tools.expense_tools import (
     AddExpenseResult,
-    ExpenseRecordsToolResult,
     ExpenseSummaryResult,
     add_expense,
-    get_expense_records,
     get_expense_summary,
 )
 from app.tools.priority_tools import (
@@ -55,7 +50,6 @@ from app.tools.priority_tools import (
 
 ToolResult = (
     AddExpenseResult
-    | ExpenseRecordsToolResult
     | ExpenseSummaryResult
     | CreateCommitmentResult
     | SearchCommitmentsResult
@@ -99,7 +93,7 @@ class RegisteredTool:
 
 
 class ToolRegistry:
-    """Binds request-scoped services to the Family Context tools."""
+    """Binds request-scoped services to the seven Family Context tools."""
 
     def __init__(
         self,
@@ -121,14 +115,6 @@ class ToolRegistry:
             payload: BaseModel,
         ) -> ExpenseSummaryResult:
             return await get_expense_summary(
-                expense_service,
-                ExpenseSummaryQuery.model_validate(payload),
-            )
-
-        async def expense_records_handler(
-            payload: BaseModel,
-        ) -> ExpenseRecordsToolResult:
-            return await get_expense_records(
                 expense_service,
                 ExpenseSummaryQuery.model_validate(payload),
             )
@@ -192,20 +178,6 @@ class ToolRegistry:
                 ),
                 input_model=ExpenseSummaryQuery,
                 handler=expense_summary_handler,
-            ),
-
-            RegisteredTool(
-                name="get_expense_records",
-                description=(
-                    "Find stored expense records and return their dates, "
-                    "merchant, description, category, and amount. Use this "
-                    "when the user asks to fetch or show a particular bill "
-                    "or transaction. Search term matches category, merchant, "
-                    "or description. Use search_term for the user's wording; "
-                    "do not combine it with category unless needed."
-                ),
-                input_model=ExpenseSummaryQuery,
-                handler=expense_records_handler,
             ),
 
             RegisteredTool(

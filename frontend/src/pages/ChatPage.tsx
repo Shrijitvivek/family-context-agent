@@ -15,7 +15,6 @@ import {
   AlertCircle,
   UsersRound,
   User,
-  Trash2,
   Loader2,
 } from "lucide-react";
 
@@ -49,14 +48,8 @@ export default function ChatPage() {
 
   const familyId = selectedFamilyId ?? "";
 
-  const {
-    messages,
-    loading,
-    historyLoading,
-    error,
-    sendChatMessage,
-    clearChat,
-  } = useChat(familyId, selectedMemberId);
+  const { messages, loading, historyLoading, error, sendChatMessage } =
+    useChat(familyId, selectedMemberId);
 
   const hasMessages = messages.length > 0;
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -97,28 +90,6 @@ export default function ChatPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            {hasMessages && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "Clear this conversation from the screen? Stored messages will remain in the backend.",
-                    )
-                  ) {
-                    void clearChat();
-                  }
-                }}
-                disabled={loading || historyLoading}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
-                aria-label="Clear conversation"
-              >
-                <Trash2 size={14} aria-hidden="true" />
-                <span className="hidden sm:inline">Clear chat</span>
-              </button>
-            )}
-
-            {/* Member context indicator */}
             {selectedMemberId && (
               <span className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700">
                 <User size={12} aria-hidden="true" />

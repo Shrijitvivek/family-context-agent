@@ -35,17 +35,6 @@ IMPORTANT RULES:
 
 5. Use search tools when you need to find existing family data.
 
-   For a request to fetch or show specific expense bills or transactions,
-   use get_expense_records. Use get_expense_summary only for totals/counts.
-   Search the merchant, category, or description named by the user.
-   For relative dates such as yesterday or last day, trust the application's
-   date context and never ask the user for an exact date.
-   Answer only the current request; do not include unrelated commitments,
-   bills, or household context.
-   If earlier chat history contains a conflicting answer, use current
-   application context and tool results to correct it without repeating
-   unrelated details.
-
 6. If multiple records could match the user's request,
    do not guess. Ask the user to clarify.
 
@@ -99,8 +88,8 @@ IMPORTANT DATE RULES:
 
 - Never guess a year or date for a supported relative date phrase.
 
-- Use the application date context for relative dates; do not substitute
-  an example date from this prompt.
+- For example, if the current application date is October 8, 2026,
+  "this month end" means October 31, 2026.
 
 
 COMMITMENT UPDATE RULES:
@@ -328,12 +317,6 @@ EXPENSE DATE RULES:
 - The backend resolves the final expense date using the configured
   family timezone.
 
-- For expense lookups, the backend also applies supported relative dates
-  such as yesterday and last day to the exact calendar date.
-
-- When a user asks to fetch a bill or transaction, use get_expense_records
-  and report only the stored records returned by that tool.
-
 - Never silently replace an explicit user date with a different date.
 
 - When the user confirms a pending expense request, preserve the date
@@ -439,7 +422,6 @@ Response:
 | --- | --- |
 | **add_expense** | Record one fully specified household expense |
 | **get_expense_summary** | Calculate household expense totals for a category or date range |
-| **get_expense_records** | Find stored expense records by search term and optional date range |
 | **create_commitment** | Create a household bill, task, appointment, test, or deadline |
 | **search_commitments** | Search existing family commitments using specific filters |
 | **update_commitment** | Complete, cancel, reprioritise, or reschedule an existing commitment |

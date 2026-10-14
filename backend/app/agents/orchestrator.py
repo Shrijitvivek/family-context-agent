@@ -10,10 +10,8 @@ from app.clients.ai_model import AIModelClient
 from app.core.config import get_settings
 from app.tools.registry import ToolRegistry
 from app.utils.dates import (
-    contains_relative_expense_date,
     resolve_commitment_due_date,
     resolve_expense_date,
-    today_in,
 )
 
 
@@ -114,15 +112,10 @@ class FamilyContextAgent:
         self.tool_registry = tool_registry
 
     async def run(self, state: AgentState) -> AgentState:
-        current_date = today_in(get_settings().family_timezone).isoformat()
-        context_section = (
-            "\n\nAPPLICATION DATE CONTEXT\n"
-            f"Today is {current_date} in the family's configured timezone. "
-            "Yesterday and last day mean one calendar day before today."
-        )
+        context_section = ""
 
         if state.household_context:
-            context_section += f"""
+            context_section = f"""
 
 CURRENT HOUSEHOLD CONTEXT
 =========================
@@ -242,21 +235,10 @@ or ask the user for clarification.
                     except ValueError as exc:
                         state.assistant_message = str(exc)
                         return state
+
                     arguments["expense_date"] = (
                         resolved_date.isoformat()
                     )
-
-                elif tool_call.name == "get_expense_records":
-                    if state.member_id is not None:
-                        arguments["member_id"] = str(state.member_id)
-
-                    if contains_relative_expense_date(state.user_message):
-                        resolved_date = resolve_expense_date(
-                            state.user_message,
-                            get_settings().family_timezone,
-                        )
-                        arguments["start_date"] = resolved_date.isoformat()
-                        arguments["end_date"] = resolved_date.isoformat()
 
                 elif tool_call.name == "create_commitment":
                     commitment_type = str(

@@ -168,16 +168,6 @@ export function useChat(familyId: string, memberId: string | null) {
     [familyId, memberId, conversationId, loading, historyLoading],
   );
 
-  const clearChat = useCallback(async () => {
-    if (!familyId || loading || historyLoading) return false;
-
-    setError(null);
-    localStorage.removeItem(getStorageKey(familyId, memberId));
-    setMessages([]);
-    setConversationId(undefined);
-    return true;
-  }, [familyId, memberId, loading, historyLoading]);
-
   return {
     messages,
     conversationId,
@@ -185,6 +175,5 @@ export function useChat(familyId: string, memberId: string | null) {
     historyLoading,
     error,
     sendChatMessage,
-    clearChat,
   };
 }

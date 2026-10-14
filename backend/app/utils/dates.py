@@ -41,10 +41,7 @@ _COMPOUND_RELATIVE_RE = re.compile(
     r"\bthe\s+day\s+(before\s+yesterday|after\s+tomorrow)\b",
     re.IGNORECASE,
 )
-_RELATIVE_WORD_RE = re.compile(
-    r"\b(today|yesterday|last\s+day(?:['’]s)?|previous\s+day|tomorrow|last\s+week|next\s+week)\b",
-    re.IGNORECASE,
-)
+_RELATIVE_WORD_RE = re.compile(r"\b(today|yesterday|tomorrow|last\s+week|next\s+week)\b", re.IGNORECASE)
 _UNSUPPORTED_RELATIVE_RE = re.compile(
     r"\b(?:last\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|month)|"
     r"next\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|month)|"
@@ -167,17 +164,7 @@ def resolve_expense_date(
         if any(start <= match.start() and match.end() <= end for start, end in consumed_spans):
             continue
         expression = re.sub(r"\s+", " ", match.group().casefold())
-        offsets = {
-            "today": 0,
-            "yesterday": -1,
-            "last day": -1,
-            "last day's": -1,
-            "last day’s": -1,
-            "previous day": -1,
-            "tomorrow": 1,
-            "last week": -7,
-            "next week": 7,
-        }
+        offsets = {"today": 0, "yesterday": -1, "tomorrow": 1, "last week": -7, "next week": 7}
         matches.append((match.span(), reference_date + timedelta(days=offsets[expression])))
         consumed_spans.append(match.span())
 
@@ -205,16 +192,6 @@ def resolve_expense_date(
     if resolved:
         return next(iter(resolved))
     return reference_date
-
-
-def contains_relative_expense_date(user_message: str) -> bool:
-    """Whether a message contains a supported relative date expression."""
-
-    return bool(
-        _RELATIVE_AMOUNT_RE.search(user_message)
-        or _COMPOUND_RELATIVE_RE.search(user_message)
-        or _RELATIVE_WORD_RE.search(user_message)
-    )
 
 
 def describe_due(due_date: date, today: date) -> str:
