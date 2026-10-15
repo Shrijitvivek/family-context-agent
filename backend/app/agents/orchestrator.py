@@ -114,55 +114,43 @@ def _resolve_commitment_candidate(
     if not commitments:
         return None
 
-    # Match an explicitly stated amount, including ₹3,240 and 3240.
     
-    # Match an explicitly stated currency amount first.
-    amount_match = re.search(
-        r"(?:₹|rs\.?\s*)\s*([\d,]+(?:\.\d{1,2})?)|"
-        r"\b([\d,]+(?:\.\d{1,2})?)\s*(?:rupees|inr)\b",
-        user_message,
-        re.IGNORECASE,
-    )
-
+    # Extract the requested amount without confusing it with the
+    # new due date being requested.
     amount = None
 
-    if amount_match:
-        raw_amount = next(
-            (group for group in amount_match.groups() if group),
-            None,
-        )
-        if raw_amount:
+    amount_patterns = [
+        r"₹\s*([\d,]+(?:\.\d{1,2})?)",
+        r"\b(?:bill|amount|commitment)\s+(?:of\s+)?"
+        r"(?:₹\s*)?([\d,]+(?:\.\d{1,2})?)\b",
+        r"\b([\d,]+(?:\.\d{1,2})?)\s+"
+        r"(?:rupees|inr|bill|amount|commitment)\b",
+    ]
+
+    for pattern in amount_patterns:
+        match = re.search(pattern, user_message, re.IGNORECASE)
+        if match:
             try:
-                amount = Decimal(raw_amount.replace(",", ""))
+                amount = Decimal(match.group(1).replace(",", ""))
             except InvalidOperation:
-                return None
+                amount = None
+            break
 
-    else:
-        # Accept a number without a currency symbol only when the
-        # message clearly refers to a commitment amount.
-        amount_context = bool(
-            re.search(
-                r"\b(amount|commitment|bill)\b",
-                user_message,
-                re.IGNORECASE,
-            )
+    # Allow a bare number only when the preceding assistant message
+    # explicitly asked the user to identify an amount.
+    if amount is None and allow_bare_amount:
+        numbers = re.findall(
+            r"(?<![\w.])\d[\d,]*(?:\.\d{1,2})?(?![\w.])",
+            user_message,
         )
 
-        if allow_bare_amount or amount_context:
-            number_matches = re.findall(
-                r"(?<![\w.])\d[\d,]*(?:\.\d{1,2})?(?![\w.])",
-                user_message,
-            )
+        # Do not guess when the reply contains several numbers.
+        if len(numbers) == 1:
+            try:
+                amount = Decimal(numbers[0].replace(",", ""))
+            except InvalidOperation:
+                amount = None
 
-            # Multiple numbers could represent dates or other details.
-            # Never guess which number is the intended amount.
-            if len(number_matches) == 1:
-                try:
-                    amount = Decimal(
-                        number_matches[0].replace(",", "")
-                    )
-                except InvalidOperation:
-                    return None
 
 
     # Match an explicitly stated calendar date.
@@ -422,21 +410,19 @@ or ask the user for clarification.
                     requested_id = str(arguments.get("commitment_id", ""))
 
                     
+                    
                     if commitment_search_records is None:
-                        # The model may try to update directly without searching
-                        # during this run. Perform a fresh family-scoped search.
+                        # Fetch fresh records if this run has not searched yet.
                         try:
                             search_result = await self.tool_registry.execute(
                                 "search_commitments",
                                 {
                                     "family_id": str(state.family_id),
+                                    "status": "PENDING",
                                 },
                             )
                         except Exception:
-                            search_result = {
-                                "success": False,
-                                "error": "Commitment search failed.",
-                            }
+                            search_result = None
 
                         if (
                             not isinstance(search_result, dict)
@@ -452,6 +438,8 @@ or ask the user for clarification.
                             state.requires_clarification = True
                             return state
 
+                        # IMPORTANT: Use records from the fresh search result,
+                        # not the old commitment_search_records variable.
                         commitment_search_records = [
                             item
                             for item in search_result["commitments"]
@@ -459,12 +447,12 @@ or ask the user for clarification.
                             and item.get("id") is not None
                         ]
 
-                        # Keep the internal search visible in the run's audit data.
                         state.tool_calls.append(
                             {
                                 "name": "search_commitments",
                                 "arguments": {
                                     "family_id": str(state.family_id),
+                                    "status": "PENDING",
                                 },
                             }
                         )
@@ -475,25 +463,44 @@ or ask the user for clarification.
                             }
                         )
 
-                        if not commitment_search_records:
-                            state.assistant_message = (
-                                "I couldn't find a matching commitment. "
-                                "Please specify which bill you mean."
-                            )
-                            state.requires_clarification = True
-                            return state
+                    
+                    # Normalize status values and keep only editable
+                    # pending commitments.
+                    def _get_record_field(record, field, default=None):
+                        if isinstance(record, dict):
+                            value = record.get(field, default)
+                        else:
+                            value = getattr(record, field, default)
+
+                        if field == "status" and value is not None:
+                            value = getattr(value, "value", value)
+
+                        return value
+
+                    commitment_search_records = [
+                        item
+                        for item in (commitment_search_records or [])
+                        if str(
+                            _get_record_field(item, "status", "")
+                        ).upper().split(".")[-1] == "PENDING"
+                    ]
+
+
+                    if not commitment_search_records:
+                        state.assistant_message = (
+                            "I couldn't find a pending commitment to update. "
+                            "Completed and cancelled commitments cannot be edited."
+                        )
+                        state.requires_clarification = True
+                        return state
+
 
 
                     if len(commitment_search_records) == 1:
                         verified_id = str(commitment_search_records[0]["id"])
 
-                        if requested_id != verified_id:
-                            state.assistant_message = (
-                                "I couldn't safely identify that commitment. "
-                                "Please specify which bill or task you want to change."
-                            )
-                            state.requires_clarification = True
-                            return state
+                        # Use the verified pending record, not an ID guessed by the model.
+                        arguments["commitment_id"] = verified_id
 
                     elif len(commitment_search_records) > 1:
                         # Find the previous assistant message, excluding the current user reply.

@@ -393,27 +393,39 @@ async def create_commitment(
     )
 
 
+
 async def search_commitments(
     service: CommitmentService,
     query: SearchCommitmentsQuery,
 ) -> SearchCommitmentsResult:
     """Find commitments matching the agent's filters."""
 
+    commitments = await service.search(query)
+
+    if query.status is None:
+    # Ordinary searches show active commitments only.
+    # Explicit status searches can still retrieve historical records.
+        commitments = [
+            commitment
+            for commitment in commitments
+            if str(commitment.status) not in {
+                CommitmentStatus.COMPLETED.value,
+                CommitmentStatus.CANCELLED.value,
+            }
+        ]
+
     results = [
-        CommitmentRead.model_validate(c)
-        for c in await service.search(query)
+        CommitmentRead.model_validate(commitment)
+        for commitment in commitments
     ]
 
     if not results:
-        message = "No matching commitments were found."
-
+        message = "No matching active commitments were found."
     elif len(results) == 1:
         message = "Found 1 matching commitment."
-
     else:
         message = (
-            f"Found {len(results)} matching commitments. "
-            "If the user meant one of them, ask which before changing anything."
+            f"Found {len(results)} matching commitments."
         )
 
     return SearchCommitmentsResult(
