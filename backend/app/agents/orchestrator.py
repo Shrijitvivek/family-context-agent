@@ -48,6 +48,12 @@ _DATE_REQUIRED_COMMITMENT_TYPES = {
     "RENEWAL",
 }
 
+_TITLE_MATCH_STOP_WORDS = {
+    "a", "an", "and", "as", "at", "before", "complete", "completed",
+    "do", "done", "for", "from", "i", "it", "mark", "my", "of", "on",
+    "please", "set", "the", "to", "update", "with",
+}
+
 _COMMITMENT_ACTION_PREFIX_RE = re.compile(
     r"^\s*(?:(?:please|can you|could you)\s+)?"
     r"(?:mark|set|complete|finish|update|change|reschedule|cancel)\s+"
@@ -916,6 +922,32 @@ def _resolve_commitment_candidate(
             candidates = dated_candidates
         elif amount is None:
             return None
+
+    if len(candidates) > 1:
+        title_query = _COMMITMENT_ACTION_PREFIX_RE.sub(
+            "", user_message, count=1
+        )
+        title_query = _COMMITMENT_ACTION_SUFFIX_RE.sub(
+            "", title_query, count=1
+        )
+        query_tokens = {
+            token
+            for token in re.findall(r"[a-z0-9]+", title_query.casefold())
+            if token not in _TITLE_MATCH_STOP_WORDS and not token.isdigit()
+        }
+        if query_tokens:
+            scored = []
+            for item in candidates:
+                title_tokens = set(
+                    re.findall(r"[a-z0-9]+", str(item.get("title") or "").casefold())
+                )
+                score = len(query_tokens & title_tokens) / len(query_tokens)
+                scored.append((score, item))
+            scored.sort(key=lambda pair: pair[0], reverse=True)
+            best_score = scored[0][0]
+            second_score = scored[1][0]
+            if best_score >= 0.6 and best_score - second_score >= 0.15:
+                candidates = [scored[0][1]]
 
     if len(candidates) != 1:
         return None
