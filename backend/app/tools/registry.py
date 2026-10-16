@@ -185,7 +185,12 @@ class ToolRegistry:
                 description=(
                     "Create a household bill, task, appointment, test, or "
                     "deadline. Bills, appointments, lab tests, deadlines, "
-                    "and renewals need a due_date. To save an uploaded "
+                    "and renewals need a due_date. Past due dates are allowed "
+                    "for forgotten commitments after the user confirms they are "
+                    "intentional; then call this tool with the supplied date and "
+                    "the system will mark it OVERDUE. Never claim past dates are "
+                    "unsupported. "
+                    "To save an uploaded "
                     "document the user has confirmed, pass its document_id; "
                     "fields you omit are taken from the document's extraction. "
                     "If similar items are returned, ask the user before "
