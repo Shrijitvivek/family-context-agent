@@ -15,6 +15,7 @@ from app.utils.dates import (
 )
 import re
 from decimal import Decimal, InvalidOperation
+from datetime import date, timedelta
 from uuid import UUID
 
 
@@ -109,28 +110,125 @@ def _requests_to_show(message: str) -> bool:
     )
 
 
-def _follows_all_overdue_request(state: AgentState) -> bool:
+def _requests_commitment_list(state: AgentState) -> bool:
     if not _requests_to_show(state.user_message):
         return False
 
-    return any(
+    explicitly_mentions_commitments = bool(
+        re.search(
+            r"\b(?:commitments?|tasks?|bills?|appointments?)\b",
+            state.user_message,
+            re.IGNORECASE,
+        )
+    )
+    follows_commitment_request = any(
         item.get("role") == "user"
-        and _requests_all_overdue_completion(item.get("content", ""))
+        and (
+            _requests_all_overdue_completion(item.get("content", ""))
+            or re.search(
+                r"\b(?:commitments?|tasks?|bills?|appointments?)\b",
+                item.get("content", ""),
+                re.IGNORECASE,
+            )
+        )
         for item in state.history
     )
+    return explicitly_mentions_commitments or follows_commitment_request
 
 
-def _format_commitment_list(records: list[dict]) -> str:
+def _prerequisite_due_date(
+    state: AgentState,
+    title: str,
+    target_due_date: date,
+) -> date | None:
+    """Infer a due date for a named prerequisite placed before a dated event."""
+    match = re.search(
+        r"\bbefore\s+that\b(?P<source>.*)$",
+        state.user_message,
+        re.IGNORECASE,
+    )
+    if not match or not title.strip():
+        return None
+
+    source_text = match.group("source")
+    if title.casefold() not in source_text.casefold():
+        return None
+
+    try:
+        return resolve_commitment_due_date(
+            source_text,
+            get_settings().family_timezone,
+        )
+    except ValueError:
+        return target_due_date - timedelta(days=1)
+
+
+def _format_commitment_list(
+    records: list[dict],
+    recently_completed: dict | None = None,
+) -> str:
     if not records:
-        return "There are no overdue commitments."
+        lines = [
+            "There are no active commitments.\n\n"
+            "| # | Title | Type | Category | Status | Due Date | ID |\n"
+            "|---:|---|---|---|---|---|---|\n"
+            "| — | None | — | — | — | — | — |",
+        ]
+    else:
+        lines = [
+            "Your Current Commitments",
+            "",
+            "| **#** | **Title** | **Type** | **Category** | **Status** | **Due Date** | **ID** |",
+            "| ---: | --- | --- | --- | --- | --- | --- |",
+        ]
+    for index, record in enumerate(records, start=1):
+        title = str(record.get("title") or "Untitled commitment").replace("|", "\\|")
+        commitment_type = str(record.get("commitment_type") or "—").upper().split(".")[-1]
+        category = str(record.get("category") or "GENERAL").replace("|", "\\|")
+        status = str(record.get("status", "")).upper().split(".")[-1] or "UNKNOWN"
+        due_date = record.get("due_date") or "—"
+        commitment_id = str(record.get("id", "—"))
+        lines.append(
+            f"| {index} | {title} | {commitment_type} | {category} | "
+            f"**{status}** | {due_date} | `{commitment_id}` |"
+        )
 
-    lines = ["Overdue commitments:"]
-    for record in records:
-        title = record.get("title") or "Untitled commitment"
-        due_date = record.get("due_date")
-        suffix = f" (due {due_date})" if due_date else ""
-        lines.append(f"- {title}{suffix}")
+    if recently_completed is not None:
+        title = str(
+            recently_completed.get("title") or "Untitled commitment"
+        ).replace("|", "\\|")
+        completed_id = str(recently_completed.get("id", "—"))
+        completed_at = recently_completed.get("completed_at")
+        completion_detail = (
+            f" was completed on {str(completed_at)[:10]}"
+            if completed_at
+            else " is completed"
+        )
+        lines.extend(
+            [
+                "",
+                f"*Note:* The **{title}** commitment (ID `{completed_id}`)"
+                f"{completion_detail}, so it no longer appears in the active list. "
+                "Let me know if you’d like to see completed items, add a new "
+                "commitment, or make any other changes!",
+            ]
+        )
     return "\n".join(lines)
+
+
+def _most_recently_completed(records: list[dict]) -> dict | None:
+    completed_records = [
+        record
+        for record in records
+        if isinstance(record, dict)
+        and record.get("id") is not None
+        and str(record.get("status", "")).upper().split(".")[-1]
+        == "COMPLETED"
+        and record.get("completed_at")
+    ]
+    if not completed_records:
+        return None
+    return max(completed_records, key=lambda record: str(record["completed_at"]))
 
 
 def _expense_date_source(state: AgentState) -> str:
@@ -331,16 +429,17 @@ class FamilyContextAgent:
         self.tool_registry = tool_registry
 
     async def run(self, state: AgentState) -> AgentState:
-        show_overdue_followup = _follows_all_overdue_request(state)
+        show_active_commitments = _requests_commitment_list(state)
         complete_all_overdue = _requests_all_overdue_completion(
             state.user_message
         )
 
-        if show_overdue_followup or complete_all_overdue:
+        if show_active_commitments or complete_all_overdue:
             search_arguments = {
                 "family_id": str(state.family_id),
-                "status": "OVERDUE",
             }
+            if complete_all_overdue:
+                search_arguments["status"] = "OVERDUE"
             search_result = await self.tool_registry.execute(
                 "search_commitments",
                 search_arguments,
@@ -364,31 +463,63 @@ class FamilyContextAgent:
                 or not isinstance(search_result.get("commitments"), list)
             ):
                 state.assistant_message = (
-                    "I couldn't retrieve the overdue commitments. Please try again."
+                    "I couldn't retrieve the commitments. Please try again."
                 )
                 state.requires_clarification = True
                 return state
 
-            overdue_records = [
+            active_records = [
                 record
                 for record in search_result["commitments"]
                 if isinstance(record, dict)
                 and record.get("id") is not None
                 and str(record.get("status", "")).upper().split(".")[-1]
-                == "OVERDUE"
+                in {"PENDING", "OVERDUE"}
             ]
 
-            if show_overdue_followup:
-                state.assistant_message = _format_commitment_list(overdue_records)
+            if show_active_commitments:
+                completed_search_arguments = {
+                    "family_id": str(state.family_id),
+                    "status": "COMPLETED",
+                }
+                completed_search_result = await self.tool_registry.execute(
+                    "search_commitments",
+                    completed_search_arguments,
+                )
+                state.tool_calls.append(
+                    {
+                        "name": "search_commitments",
+                        "arguments": completed_search_arguments,
+                    }
+                )
+                state.tool_results.append(
+                    {
+                        "tool": "search_commitments",
+                        "result": completed_search_result,
+                    }
+                )
+                completed_records = (
+                    completed_search_result.get("commitments", [])
+                    if isinstance(completed_search_result, dict)
+                    and completed_search_result.get("success", False)
+                    and isinstance(
+                        completed_search_result.get("commitments"), list
+                    )
+                    else []
+                )
+                state.assistant_message = _format_commitment_list(
+                    active_records,
+                    _most_recently_completed(completed_records),
+                )
                 return state
 
-            if not overdue_records:
+            if not active_records:
                 state.assistant_message = "There are no overdue commitments to complete."
                 return state
 
             completed_titles: list[str] = []
             failed_titles: list[str] = []
-            for record in overdue_records:
+            for record in active_records:
                 update_arguments = {
                     "family_id": str(state.family_id),
                     "commitment_id": str(record["id"]),
@@ -583,6 +714,13 @@ or ask the user for clarification.
                             # clarification layer to ask for a date.
                             arguments.pop("due_date", None)
                         else:
+                            inferred_prerequisite_date = _prerequisite_due_date(
+                                state,
+                                str(arguments.get("title", "")),
+                                resolved_due_date,
+                            )
+                            if inferred_prerequisite_date is not None:
+                                resolved_due_date = inferred_prerequisite_date
                             arguments["due_date"] = (
                                 resolved_due_date.isoformat()
                             )

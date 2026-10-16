@@ -88,6 +88,11 @@ IMPORTANT DATE RULES:
 
 - Never guess a year or date for a supported relative date phrase.
 
+- If the user says an undated prerequisite must happen "before that" and
+  gives the dependent commitment's date, assign the prerequisite a due date
+  one calendar day before the dated commitment. Do not ask for another date
+  unless the user supplies a different date for the prerequisite.
+
 - For example, if the current application date is October 8, 2026,
   "this month end" means October 31, 2026.
 
