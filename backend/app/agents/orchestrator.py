@@ -13,6 +13,9 @@ from app.utils.dates import (
     resolve_commitment_due_date,
     resolve_expense_date,
 )
+import re
+from decimal import Decimal, InvalidOperation
+from uuid import UUID
 
 
 _CONFIRMATION_REPLIES = {
@@ -36,6 +39,55 @@ _DATE_REQUIRED_COMMITMENT_TYPES = {
     "DEADLINE",
     "RENEWAL",
 }
+
+_COMMITMENT_ACTION_PREFIX_RE = re.compile(
+    r"^\s*(?:(?:please|can you|could you)\s+)?"
+    r"(?:mark|set|complete|finish|update|change|reschedule|cancel)\s+"
+    r"(?:(?:the|a|an)\s+)?",
+    re.IGNORECASE,
+)
+_COMMITMENT_ACTION_SUFFIX_RE = re.compile(
+    r"\s+(?:for|assigned to|belonging to)\s+.+$"
+    r"|\s+as\s+(?:completed|complete|done|finished|cancelled|canceled)$"
+    r"|\s+(?:completed|complete|done|finished|cancelled|canceled)$",
+    re.IGNORECASE,
+)
+
+
+def _commitment_search_filters(state: AgentState) -> dict[str, str]:
+    """Build a best-effort title/member filter from the user's request."""
+    title_query = _COMMITMENT_ACTION_PREFIX_RE.sub("", state.user_message, count=1)
+    title_query = _COMMITMENT_ACTION_SUFFIX_RE.sub("", title_query, count=1)
+    title_query = title_query.strip(" \t\r\n.,!?'“”\"")
+
+    # OVERDUE commitments are still editable and can be completed.
+    # Omitting status lets the tool return active records, including PENDING
+    # and OVERDUE, while its ordinary search excludes terminal statuses.
+    filters = {"family_id": str(state.family_id)}
+    if title_query:
+        filters["title_query"] = title_query
+
+    # Household context includes authoritative member names and UUIDs as:
+    # - Rahul (PARENT) id=<uuid>. Never substitute the speaking member's ID.
+    requested_member = re.search(
+        r"\b(?:for|assigned to|belonging to)\s+([\w'-]+)",
+        state.user_message,
+        re.IGNORECASE,
+    )
+    if requested_member:
+        for name, member_id in re.findall(
+            r"(?im)^\s*-\s*([^\r\n(]+?)\s*\([^\r\n)]*\)\s*id="
+            r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\s*$",
+            state.household_context or "",
+        ):
+            if name.strip().casefold() == requested_member.group(1).casefold():
+                try:
+                    filters["member_id"] = str(UUID(member_id))
+                except ValueError:
+                    pass
+                break
+
+    return filters
 
 
 def _expense_date_source(state: AgentState) -> str:
@@ -101,6 +153,130 @@ def _expense_date_source(state: AgentState) -> str:
 
     return "\n".join(reversed(user_messages))
 
+def _resolve_commitment_candidate(
+    user_message: str,
+    commitments: list[dict],
+    *,
+    allow_bare_amount: bool = False,
+) -> str | None:
+    """Return an ID only when explicit user details identify one record."""
+
+    if not commitments:
+        return None
+
+    
+    # Extract the requested amount without confusing it with the
+    # new due date being requested.
+    amount = None
+
+    amount_patterns = [
+        r"₹\s*([\d,]+(?:\.\d{1,2})?)",
+        r"\b(?:bill|amount|commitment)\s+(?:of\s+)?"
+        r"(?:₹\s*)?([\d,]+(?:\.\d{1,2})?)\b",
+        r"\b([\d,]+(?:\.\d{1,2})?)\s+"
+        r"(?:rupees|inr|bill|amount|commitment)\b",
+    ]
+
+    for pattern in amount_patterns:
+        match = re.search(pattern, user_message, re.IGNORECASE)
+        if match:
+            try:
+                amount = Decimal(match.group(1).replace(",", ""))
+            except InvalidOperation:
+                amount = None
+            break
+
+    # Allow a bare number only when the preceding assistant message
+    # explicitly asked the user to identify an amount.
+    if amount is None and allow_bare_amount:
+        numbers = re.findall(
+            r"(?<![\w.])\d[\d,]*(?:\.\d{1,2})?(?![\w.])",
+            user_message,
+        )
+
+        # Do not guess when the reply contains several numbers.
+        if len(numbers) == 1:
+            try:
+                amount = Decimal(numbers[0].replace(",", ""))
+            except InvalidOperation:
+                amount = None
+
+
+
+    # Match an explicitly stated calendar date.
+    date_match = re.search(
+        r"\b("
+        r"January|February|March|April|May|June|July|August|"
+        r"September|October|November|December"
+        r")\s+(\d{1,2})(?:,?\s+(\d{4}))?\b",
+        user_message,
+        re.IGNORECASE,
+    )
+
+    candidates = commitments
+
+    if amount is not None:
+        candidates = [
+            item for item in candidates
+            if item.get("amount") is not None
+            and Decimal(str(item["amount"])) == amount
+        ]
+
+    if date_match:
+        from datetime import date
+
+        month_name, day, year = date_match.groups()
+        month = date_match.group(1).lower()
+        months = {
+            "january": 1, "february": 2, "march": 3,
+            "april": 4, "may": 5, "june": 6,
+            "july": 7, "august": 8, "september": 9,
+            "october": 10, "november": 11, "december": 12,
+        }
+
+        try:
+            requested_month = months[month]
+            requested_day = int(day)
+            requested_year = int(year) if year else None
+        except (KeyError, ValueError):
+            return None
+
+        def date_matches(item: dict) -> bool:
+            raw_date = item.get("due_date")
+            if not raw_date:
+                return False
+
+            try:
+                stored_date = date.fromisoformat(str(raw_date)[:10])
+            except ValueError:
+                return False
+
+            return (
+                stored_date.month == requested_month
+                and stored_date.day == requested_day
+                and (
+                    requested_year is None
+                    or stored_date.year == requested_year
+                )
+            )
+
+        # A date in a due-date correction may refer to the NEW date,
+        # not the existing record. Use date filtering only if it narrows
+        # the candidates; otherwise preserve the amount-based selection.
+        dated_candidates = [
+            item for item in candidates if date_matches(item)
+        ]
+
+        if dated_candidates:
+            candidates = dated_candidates
+        elif amount is None:
+            return None
+
+    if len(candidates) != 1:
+        return None
+
+    commitment_id = candidates[0].get("id")
+    return str(commitment_id) if commitment_id else None
 
 class FamilyContextAgent:
     def __init__(
@@ -176,6 +352,8 @@ or ask the user for clarification.
 
         tool_definitions = self.tool_registry.definitions()
         max_tool_rounds = 5
+        # Keep search evidence within this single agent run.
+        commitment_search_records: list[dict] | None = None
 
         for _ in range(max_tool_rounds):
             response = await self.ai_client.chat(
@@ -277,6 +455,144 @@ or ask the user for clarification.
                         )
                         return state
 
+                # Validate commitment selection before executing an update.
+                if tool_call.name == "update_commitment":
+                    def _get_record_field(record, field, default=None):
+                        if isinstance(record, dict):
+                            value = record.get(field, default)
+                        else:
+                            value = getattr(record, field, default)
+
+                        if field == "status" and value is not None:
+                            value = getattr(value, "value", value)
+
+                        return value
+
+                    def _pending_records(records):
+                        return [
+                            item
+                            for item in records
+                            if str(
+                                _get_record_field(item, "status", "")
+                            ).upper().split(".")[-1]
+                            in {"PENDING", "OVERDUE"}
+                        ]
+
+                    pending_records = _pending_records(
+                        commitment_search_records or []
+                    )
+
+                    if not pending_records:
+                        search_arguments = _commitment_search_filters(state)
+                        search_result = await self.tool_registry.execute(
+                            "search_commitments",
+                            search_arguments,
+                        )
+                        state.tool_calls.append(
+                            {
+                                "name": "search_commitments",
+                                "arguments": search_arguments,
+                            }
+                        )
+                        state.tool_results.append(
+                            {
+                                "tool": "search_commitments",
+                                "result": search_result,
+                            }
+                        )
+
+                        if (
+                            not isinstance(search_result, dict)
+                            or not search_result.get("success", False)
+                            or not isinstance(search_result.get("commitments"), list)
+                        ):
+                            state.assistant_message = (
+                                "I couldn't verify the matching commitments. "
+                                "Please try again."
+                            )
+                            state.requires_clarification = True
+                            return state
+
+                        commitment_search_records = [
+                            item
+                            for item in search_result["commitments"]
+                            if isinstance(item, dict) and item.get("id") is not None
+                        ]
+                        pending_records = _pending_records(
+                            commitment_search_records
+                        )
+
+                    if not pending_records:
+                        state.assistant_message = (
+                            "I couldn't find an active commitment to update. "
+                            "Completed and cancelled commitments cannot be edited."
+                        )
+                        state.requires_clarification = True
+                        return state
+
+                    if len(pending_records) == 1:
+                        verified_id = str(
+                            _get_record_field(pending_records[0], "id", "")
+                        )
+                        if not verified_id:
+                            state.assistant_message = (
+                                "I couldn't verify the matching commitment. "
+                                "Please try again."
+                            )
+                            state.requires_clarification = True
+                            return state
+
+                        arguments["commitment_id"] = verified_id
+
+                    else:
+                        history = list(state.history)
+
+                        if (
+                            history
+                            and history[-1].get("role") == "user"
+                            and history[-1].get("content", "").strip()
+                            == state.user_message.strip()
+                        ):
+                            history.pop()
+
+                        previous_assistant = next(
+                            (
+                                item
+                                for item in reversed(history)
+                                if item.get("role") == "assistant"
+                            ),
+                            None,
+                        )
+
+                        previous_question = (
+                            previous_assistant.get("content", "").casefold()
+                            if previous_assistant
+                            else ""
+                        )
+
+                        allow_bare_amount = bool(
+                            re.search(
+                                r"\b(amount|how much|rupees|currency)\b",
+                                previous_question,
+                            )
+                        )
+
+                        verified_id = _resolve_commitment_candidate(
+                            state.user_message,
+                            pending_records,
+                            allow_bare_amount=allow_bare_amount,
+                        )
+
+                        if verified_id is None:
+                            state.assistant_message = (
+                                "I found multiple matching commitments. "
+                                "Please specify the amount or existing due date "
+                                "so I can identify the correct one."
+                            )
+                            state.requires_clarification = True
+                            return state
+
+                        arguments["commitment_id"] = verified_id
                 # Execute the tool after validation.
                 try:
                     execute = getattr(
@@ -315,6 +631,20 @@ or ask the user for clarification.
                         "result": result,
                     }
                 )
+
+                if tool_call.name == "search_commitments":
+                    if isinstance(result, dict) and result.get("success", True):
+                        records = result.get("commitments", [])
+
+                        if isinstance(records, list):
+                            commitment_search_records = [
+                                item for item in records
+                                if isinstance(item, dict) and item.get("id") is not None
+                            ]
+                        else:
+                            commitment_search_records = None
+                    else:
+                        commitment_search_records = None
 
                 messages.append(
                     {
