@@ -56,7 +56,7 @@ class ChatService:
         async def refresh_priorities(family_id: UUID) -> None:
             await priority_service.recalculate(
                 family_id,
-                today_in(get_settings().family_timezone),
+                self._today or today_in(get_settings().family_timezone),
             )
 
         commitment_service = CommitmentService(

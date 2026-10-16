@@ -163,28 +163,16 @@ async def test_judge_household_attention_completion_and_expense_journey(monkeypa
             and persisted_cbc.completed_at is not None
             and len(commitment_rows) == 4
         )
-        print(
-    "EXPENSE ROWS:",
-    [
-        {
-            "amount": str(row.amount),
-            "category": row.category,
-            "expense_date": str(row.expense_date),
-            "source_type": str(row.source_type),
-        }
-        for row in expense_rows
-    ],
-)
         expected["single_expense"] = (
             expense_response.status_code == 200
             and len(expense_rows) == 2
             and sum(row.amount == Decimal("1850.00") for row in expense_rows) == 1
             and any(
-    row.category == "GROCERIES"
-    and row.expense_date == date(2026, 10, 14)
-    for row in expense_rows
-    if row.amount == Decimal("1850.00")
-)
+                row.category == "GROCERIES"
+                and row.expense_date == TODAY
+                for row in expense_rows
+                if row.amount == Decimal("1850.00")
+            )
         )
         expected["api_db_agree"] = (
             expenses_response.status_code == 200

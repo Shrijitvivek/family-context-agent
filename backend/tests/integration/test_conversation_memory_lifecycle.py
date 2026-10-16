@@ -159,7 +159,7 @@ async def test_chat_search_then_update_changes_same_unambiguous_commitment(monke
         ])
         await session.flush()
         try:
-            result = await ChatService(session).process_message(
+            result = await ChatService(session, today=date(2026, 10, 13)).process_message(
                 family_id=family_id, member_id=member_id, conversation_id=None,
                 message="I paid the electricity bill.",
             )

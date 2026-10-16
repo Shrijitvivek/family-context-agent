@@ -2,7 +2,10 @@
 """Orchestrate AI responses and family-context tool execution."""
 
 import json
-from datetime import date
+import re
+from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
+from uuid import UUID
 
 from app.agents.clarification import build_clarification
 from app.agents.prompts import SYSTEM_PROMPT
@@ -15,10 +18,6 @@ from app.utils.dates import (
     resolve_expense_date,
     today_in,
 )
-import re
-from decimal import Decimal, InvalidOperation
-from datetime import date, timedelta
-from uuid import UUID
 
 _CONFIRMATION_REPLIES = {
     "yes",
@@ -56,8 +55,8 @@ _COMMITMENT_ACTION_PREFIX_RE = re.compile(
 )
 _COMMITMENT_ACTION_SUFFIX_RE = re.compile(
     r"\s+(?:for|assigned to|belonging to)\s+.+$"
-    r"|\s+as\s+(?:completed|complete|done|finished|cancelled|canceled)$"
-    r"|\s+(?:completed|complete|done|finished|cancelled|canceled)$",
+    r"|\s+as\s+(?:completed|complete|done|finished|cancelled|canceled)[.!?]*$"
+    r"|\s+(?:completed|complete|done|finished|cancelled|canceled)[.!?]*$",
     re.IGNORECASE,
 )
 
@@ -1017,15 +1016,45 @@ or ask the user for clarification.
                             if str(
                                 _get_record_field(item, "status", "")
                             ).upper().split(".")[-1]
-                            in {"PENDING", "OVERDUE"}
+                            in {"PENDING", "SCHEDULED", "IN_PROGRESS", "OVERDUE"}
+                        ]
+
+                    def _idempotent_terminal_records(records, update_arguments):
+                        requested_status = str(
+                            update_arguments.get("status", "")
+                        ).upper()
+                        if requested_status not in {"COMPLETED", "CANCELLED"}:
+                            return []
+                        return [
+                            record
+                            for record in records
+                            if str(
+                                _get_record_field(record, "status", "")
+                            ).upper().split(".")[-1]
+                            == requested_status
+                            and all(
+                                _get_record_field(record, field) == value
+                                for field, value in update_arguments.items()
+                                if field not in {"family_id", "commitment_id"}
+                            )
                         ]
 
                     pending_records = _pending_records(
                         commitment_search_records or []
                     )
+                    if not pending_records:
+                        pending_records = _idempotent_terminal_records(
+                            commitment_search_records or [], arguments
+                        )
 
                     if not pending_records:
                         search_arguments = _commitment_search_filters(state)
+                        requested_status = str(arguments.get("status", "")).upper()
+                        if requested_status in {"COMPLETED", "CANCELLED"}:
+                            # Permit a same-status request to resolve as a no-op.
+                            # Explicit status is required because ordinary searches
+                            # intentionally hide terminal commitments.
+                            search_arguments["status"] = requested_status
                         search_result = await self.tool_registry.execute(
                             "search_commitments",
                             search_arguments,
@@ -1063,6 +1092,10 @@ or ask the user for clarification.
                         pending_records = _pending_records(
                             commitment_search_records
                         )
+                        if not pending_records:
+                            pending_records = _idempotent_terminal_records(
+                                commitment_search_records, arguments
+                            )
 
                     if not pending_records:
                         state.assistant_message = (

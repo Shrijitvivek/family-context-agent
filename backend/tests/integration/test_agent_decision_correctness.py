@@ -204,7 +204,7 @@ async def test_agent_does_not_reopen_or_duplicate_already_completed_commitment(m
     family_id, member_id = uuid4(), uuid4()
     completed = _bill(family_id, member_id, "Electricity Bill", date(2026, 10, 18), status="COMPLETED")
     model = ScriptedDecisionModel([
-        _tool("search_commitments", {"title_query": "electricity bill"}, "search"),
+        _tool("search_commitments", {"title_query": "electricity bill", "status": "COMPLETED"}, "search"),
         _tool("update_commitment", {"commitment_id": str(completed.id), "status": "COMPLETED"}, "idempotent-complete"),
         _plain("That electricity bill is already completed."),
     ])
@@ -279,7 +279,7 @@ async def test_duplicate_bill_attempt_is_rejected_without_creating_another_row(m
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_agent_executes_later_tool_even_after_prior_tool_failure(monkeypatch):
+async def test_agent_blocks_unrequested_tool_when_update_cannot_be_verified(monkeypatch):
     family_id, member_id = uuid4(), uuid4()
     existing = _bill(family_id, member_id, "Internet Bill", date(2026, 10, 20), category="INTERNET")
     model = ScriptedDecisionModel([
@@ -309,13 +309,9 @@ async def test_agent_executes_later_tool_even_after_prior_tool_failure(monkeypat
             )
             expenses = list((await session.scalars(select(Expense).where(Expense.family_id == family_id))).all())
             await session.refresh(existing)
-            assert [call["name"] for call in result.tool_calls] == ["update_commitment", "add_expense"]
-            assert result.tool_results[0]["result"]["success"] is False
-            assert result.tool_results[1]["result"]["success"] is True
-            # Current behavior: second, unrequested action persists after update failure.
-            assert len(expenses) == 1
-            assert expenses[0].amount == Decimal("45.00")
-            assert expenses[0].category == "FOOD"
+            assert [call["name"] for call in result.tool_calls] == ["search_commitments"]
+            assert result.requires_clarification is True
+            assert len(expenses) == 0
             assert existing.due_date == date(2026, 10, 20)
         finally:
             await _cleanup(session, family_id)
