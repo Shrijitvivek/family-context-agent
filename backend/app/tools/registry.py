@@ -198,15 +198,20 @@ class ToolRegistry:
             RegisteredTool(
                 name="search_commitments",
                 description=(
-                    "Search for EXISTING family commitments before modifying "
-                    "one. Use title_query when the user identifies a bill, "
-                    "task, appointment, test, deadline, or other commitment "
-                    "by name. For example, if the user says 'electricity bill', "
-                    "set title_query to 'electricity bill'. You can also use "
-                    "category, commitment_type, status, due_before, or "
-                    "due_after when those filters are provided. When the user "
-                    "asks to update an existing commitment, ALWAYS search "
-                    "first and use the returned commitment_id for the update."
+                    "Search for EXISTING family commitments before modifying one. "
+                    "When the user identifies a commitment by title, task, bill, "
+                    "appointment, test, or other name, ALWAYS provide title_query "
+                    "using the relevant words from the user's message. "
+                    "When the user mentions a family member, identify that member "
+                    "and use the supported member_id filter to narrow the search. "
+                    "Apply other relevant filters such as category, commitment_type, "
+                    "status, due_before, or due_after when appropriate. "
+                    "When updating an existing commitment, ALWAYS search first, "
+                    "verify that the returned record matches the requested title "
+                    "and person, and use its actual commitment_id for the update. "
+                    "Never guess a commitment_id. If multiple records match, ask "
+                    "the user to clarify. If no matching editable commitment exists, "
+                    "explain that no matching commitment was found."
                 ),
                 input_model=SearchCommitmentsQuery,
                 handler=search_commitments_handler,
