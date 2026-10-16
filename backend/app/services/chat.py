@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.orchestrator import FamilyContextAgent
 from app.agents.state import AgentState
 from app.clients.ai_model import AIModelClient
+from app.core.config import get_settings
 from app.repositories.agent_event import AgentEventRepository
 from app.repositories.commitment import CommitmentRepository
 from app.repositories.conversation import ConversationRepository
@@ -21,6 +22,7 @@ from app.services.expense import ExpenseService
 from app.services.notification import NotificationService
 from app.services.priority import PriorityService
 from app.tools.registry import ToolRegistry
+from app.utils.dates import today_in
 
 
 class ChatService:
@@ -40,7 +42,6 @@ class ChatService:
         family_repository = FamilyRepository(session)
 
         expense_service = ExpenseService(expense_repository)
-        commitment_service = CommitmentService(commitment_repository)
         context_service = ContextService(
             families=family_repository,
             commitments=commitment_repository,
@@ -50,6 +51,17 @@ class ChatService:
         priority_service = PriorityService(
             commitments=commitment_repository,
             notifications=notification_service,
+        )
+
+        async def refresh_priorities(family_id: UUID) -> None:
+            await priority_service.recalculate(
+                family_id,
+                today_in(get_settings().family_timezone),
+            )
+
+        commitment_service = CommitmentService(
+            commitment_repository,
+            on_change=refresh_priorities,
         )
 
         tool_registry = ToolRegistry(
