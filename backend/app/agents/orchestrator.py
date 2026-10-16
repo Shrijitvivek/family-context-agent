@@ -145,6 +145,137 @@ def _named_bill_completion_targets(
     return targets if len(targets) > 1 else []
 
 
+def _pending_bill_request(state: AgentState) -> str | None:
+    """Find an unresolved bill creation request immediately before this reply."""
+    history = list(state.history)
+    if history and history[-1].get("role") == "user" and history[-1].get(
+        "content", ""
+    ).strip() == state.user_message.strip():
+        history.pop()
+    assistant_index = next(
+        (
+            i
+            for i in range(len(history) - 1, -1, -1)
+            if history[i].get("role") == "assistant"
+        ),
+        None,
+    )
+    if assistant_index is None:
+        return None
+    assistant = history[assistant_index]
+    question = str(assistant.get("content") or "").casefold()
+    if "in the past" in question and any(
+        word in question for word in ("intentional", "corrected date")
+    ):
+        assistant_index = next(
+            (
+                i
+                for i in range(assistant_index - 1, -1, -1)
+                if history[i].get("role") == "assistant"
+                and "bill" in str(history[i].get("content") or "").casefold()
+            ),
+            None,
+        )
+        if assistant_index is None:
+            return None
+        assistant = history[assistant_index]
+        question = str(assistant.get("content") or "").casefold()
+    if "bill" not in question or not any(
+        term in question for term in ("amount", "due date", "when is")
+    ):
+        return None
+    previous_assistant_index = max(
+        (i for i, item in enumerate(history) if item.get("role") == "assistant"),
+        default=-1,
+    )
+    for item in reversed(history[:previous_assistant_index]):
+        if item.get("role") != "user":
+            continue
+        request = str(item.get("content") or "")
+        if re.search(r"\b(?:add|create|record|track|save)\b", request, re.I) and re.search(
+            r"\bbill\b", request, re.I
+        ):
+            return request
+    return None
+
+
+def _bill_details_from_reply(message: str) -> tuple[Decimal, date] | None:
+    try:
+        due_date = resolve_commitment_due_date(
+            message, get_settings().family_timezone
+        )
+    except ValueError:
+        return None
+    date_text = re.search(
+        r"\b(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b",
+        message,
+    )
+    amount_text = message
+    if date_text:
+        amount_text = message[:date_text.start()] + " " + message[date_text.end():]
+    amount_match = re.search(r"(?<![\w.])\d[\d,]*(?:\.\d{1,2})?(?![\w.])", amount_text)
+    if not amount_match:
+        return None
+    try:
+        amount = Decimal(amount_match.group(0).replace(",", ""))
+    except InvalidOperation:
+        return None
+    if amount <= 0:
+        return None
+    return amount, due_date
+
+
+def _named_multi_completion_targets(message: str) -> list[str]:
+    """Extract multiple explicitly named commitment titles from a completion request."""
+    if not re.search(
+        r"\b(?:mark|set|complete|finish|paid|pay)\b", message, re.I
+    ) or not re.search(
+        r"\b(?:completed|complete|done|finished|paid)\b", message, re.I
+    ):
+        return []
+
+    body = re.sub(
+        r"^\s*(?:(?:please|can you|could you)\s+)?"
+        r"(?:mark|set|complete|finish)\s+(?:(?:the|these|those)\s+)?",
+        "",
+        message,
+        count=1,
+        flags=re.I,
+    )
+    body = re.sub(
+        r"\s+(?:as\s+)?(?:completed|complete|done|finished|paid)\s*[.!?]*\s*$",
+        "",
+        body,
+        flags=re.I,
+    )
+    targets = [
+        part.strip(" \t\r\n.,!?'“”\"")
+        for part in re.split(r"\s+(?:and|&)\s+|,", body, flags=re.I)
+    ]
+    targets = [
+        re.sub(r"^(?:the|these|those|my)\s+", "", target, flags=re.I)
+        for target in targets
+        if target
+    ]
+    if len(targets) < 2 or any(
+        re.search(r"\b(?:all|every|overdue)\b", target, re.I)
+        for target in targets
+    ):
+        return []
+    return targets
+
+
+def _is_dependency_request(message: str) -> bool:
+    return bool(
+        re.search(r"\bdependenc(?:y|ies)\b", message, re.I)
+        and re.search(
+            r"\b(?:set|create|add|link|record|connect|make|show)\b",
+            message,
+            re.I,
+        )
+    )
+
+
 def _past_due_creation_confirmation(state: AgentState) -> str | None:
     """Ask once before adding a new commitment with a past due date."""
     if _past_due_confirmation_source(state) is not None:
@@ -429,7 +560,15 @@ def _format_commitment_list(
             f"**{status}** | {due_date} | `{commitment_id}` |"
         )
 
-    if recently_completed is not None:
+    active_titles = {
+        str(record.get("title") or "").strip().casefold()
+        for record in records
+    }
+    if (
+        recently_completed is not None
+        and str(recently_completed.get("title") or "").strip().casefold()
+        not in active_titles
+    ):
         title = str(
             recently_completed.get("title") or "Untitled commitment"
         ).replace("|", "\\|")
@@ -465,6 +604,135 @@ def _most_recently_completed(records: list[dict]) -> dict | None:
     if not completed_records:
         return None
     return max(completed_records, key=lambda record: str(record["completed_at"]))
+
+
+def _summarize_successful_actions(state: AgentState) -> str | None:
+    """Report persisted actions if the model exhausts its tool-call rounds."""
+    created_commitments: list[str] = []
+    created_dependencies: list[str] = []
+    completed: list[str] = []
+    for call, entry in zip(state.tool_calls, state.tool_results):
+        result = entry.get("result")
+        if not isinstance(result, dict) or not result.get("success", False):
+            continue
+        tool_name = call.get("name")
+        if tool_name == "create_commitment":
+            created_commitments.append(
+                str(result.get("title") or call.get("arguments", {}).get("title") or "commitment")
+            )
+        elif tool_name == "create_dependency":
+            created_dependencies.append(
+                str(result.get("message") or "Dependency link created")
+            )
+        elif tool_name == "update_commitment":
+            completed.append(str(result.get("title") or "commitment"))
+
+    parts: list[str] = []
+    if created_commitments:
+        parts.append("Created commitments: " + ", ".join(created_commitments) + ".")
+    if created_dependencies:
+        parts.append("Dependencies created: " + " ".join(created_dependencies))
+    if completed:
+        parts.append("Marked completed: " + ", ".join(completed) + ".")
+    if not parts:
+        return None
+    if (
+        (
+            _is_dependency_request(state.user_message)
+            or re.search(r"\bbefore\b", state.user_message, re.I)
+        )
+        and not created_dependencies
+    ):
+        parts.append(
+            "I couldn't confirm that the dependency links were created."
+        )
+    return " ".join(parts)
+
+
+async def _create_missing_prerequisite_links(
+    state: AgentState, tool_registry: ToolRegistry
+) -> list[str]:
+    """Link newly created commitments when the user's wording names prerequisites."""
+    message = state.user_message
+    split = re.search(r"\bbefore\s+(?:that|the\s+.+?)\b", message, re.I)
+    if not split:
+        return []
+    before_clause = message[: split.start()]
+    after_clause = message[split.end() :]
+    created: list[dict] = []
+    for call, entry in zip(state.tool_calls, state.tool_results):
+        result = entry.get("result")
+        if (
+            call.get("name") == "create_commitment"
+            and isinstance(result, dict)
+            and result.get("success")
+            and result.get("commitment_id")
+        ):
+            created.append(
+                {
+                    "id": str(result["commitment_id"]),
+                    "title": str(result.get("title") or call.get("arguments", {}).get("title") or ""),
+                }
+            )
+    if len(created) < 2:
+        return []
+
+    stop_words = {
+        "the", "and", "that", "before", "after", "have", "has", "had",
+        "to", "go", "for", "on", "i", "my", "a", "an", "some", "new",
+        "function", "shop", "store", "buy", "get", "cut", "hair", "clothes",
+    }
+
+    def tokens(value: str) -> set[str]:
+        return {
+            token
+            for token in re.findall(r"[a-z0-9]+", value.casefold())
+            if token not in stop_words and not token.isdigit()
+        }
+
+    left_tokens = tokens(before_clause)
+    right_tokens = tokens(after_clause)
+    scored = [
+        (
+            item,
+            len(tokens(item["title"]) & left_tokens),
+            len(tokens(item["title"]) & right_tokens),
+        )
+        for item in created
+    ]
+    targets = [item for item, left, _ in scored if left >= 1 and left >= max(right for _, _, right in scored)]
+    sources = [item for item, _, right in scored if right >= 1 and item not in targets]
+    if len(targets) != 1 or not sources:
+        return []
+
+    existing_edges = {
+        (
+            str(call.get("arguments", {}).get("source_commitment_id")),
+            str(call.get("arguments", {}).get("target_commitment_id")),
+        )
+        for call in state.tool_calls
+        if call.get("name") == "create_dependency"
+    }
+    created_messages: list[str] = []
+    for source in sources:
+        edge = (source["id"], targets[0]["id"])
+        if edge in existing_edges:
+            continue
+        arguments = {
+            "family_id": str(state.family_id),
+            "source_commitment_id": edge[0],
+            "target_commitment_id": edge[1],
+            "relationship_type": "MUST_COMPLETE_BEFORE",
+        }
+        try:
+            result = await tool_registry.execute("create_dependency", arguments)
+        except Exception as exc:
+            result = {"success": False, "error": str(exc)}
+        state.tool_calls.append({"name": "create_dependency", "arguments": arguments})
+        state.tool_results.append({"tool": "create_dependency", "result": result})
+        if isinstance(result, dict) and result.get("success"):
+            created_messages.append(str(result.get("message") or "Dependency link created."))
+    return created_messages
 
 
 def _expense_date_source(state: AgentState) -> str:
@@ -671,18 +939,87 @@ class FamilyContextAgent:
             state.requires_clarification = True
             return state
 
+        pending_bill = _pending_bill_request(state)
+        bill_detail_message = state.user_message
+        if pending_bill and re.fullmatch(
+            r"\s*(?:yes|yeah|yep|correct|intentional|that's right)[.!\s]*",
+            state.user_message,
+            re.I,
+        ):
+            for item in reversed(state.history[:-1]):
+                if item.get("role") == "user" and _bill_details_from_reply(
+                    str(item.get("content") or "")
+                ):
+                    bill_detail_message = str(item["content"])
+                    break
+        bill_details = (
+            _bill_details_from_reply(bill_detail_message) if pending_bill else None
+        )
+        if pending_bill and bill_details:
+            amount, due_date = bill_details
+            if due_date < today_in(get_settings().family_timezone) and not re.fullmatch(
+                r"\s*(?:yes|yeah|yep|correct|intentional|that's right)[.!\s]*",
+                state.user_message,
+                re.I,
+            ):
+                state.assistant_message = (
+                    f"The due date you gave, {due_date.isoformat()}, is in the past. "
+                    "Is that date intentional? Reply yes to save it as overdue, "
+                    "or send a corrected date."
+                )
+                state.requires_clarification = True
+                return state
+
+            title_match = re.search(
+                r"\b(?:add|create|record|track|save)\s+(?:a|an|the)?\s*(.+?\bbill\b)",
+                pending_bill,
+                re.I,
+            )
+            title = title_match.group(1).strip(" .,!?") if title_match else "Bill"
+            title = " ".join(word.capitalize() for word in title.split())
+            category = "UTILITIES"
+            tool_arguments = {
+                "family_id": str(state.family_id),
+                "commitment_type": "BILL",
+                "title": title,
+                "category": category,
+                "amount": str(amount),
+                "due_date": due_date.isoformat(),
+            }
+            if state.member_id is not None:
+                tool_arguments["member_id"] = str(state.member_id)
+            result = await self.tool_registry.execute(
+                "create_commitment", tool_arguments
+            )
+            state.tool_calls.append(
+                {"name": "create_commitment", "arguments": tool_arguments}
+            )
+            state.tool_results.append(
+                {"tool": "create_commitment", "result": result}
+            )
+            if isinstance(result, dict) and result.get("success", False):
+                state.assistant_message = (
+                    f"{title} added as a bill commitment for ₹{amount:.2f}, "
+                    f"due {due_date.isoformat()}."
+                )
+            else:
+                state.assistant_message = (
+                    f"I couldn't add the {title}. Please try again."
+                )
+            return state
+
         show_active_commitments = _requests_commitment_list(state)
         complete_all_overdue = _requests_all_overdue_completion(
             state.user_message
         )
-        named_bill_targets = _named_bill_completion_targets(
-            state.user_message, state.history
-        )
+        named_completion_targets = _named_multi_completion_targets(
+            state.user_message
+        ) or _named_bill_completion_targets(state.user_message, state.history)
 
         if (
             show_active_commitments
             or complete_all_overdue
-            or named_bill_targets
+            or named_completion_targets
         ):
             search_arguments = {
                 "family_id": str(state.family_id),
@@ -726,12 +1063,12 @@ class FamilyContextAgent:
                 in {"PENDING", "OVERDUE"}
             ]
 
-            if named_bill_targets:
+            if named_completion_targets:
                 def _normalize_title(value: str) -> str:
                     return " ".join(re.findall(r"[a-z0-9]+", value.casefold()))
 
                 matches: list[dict] = []
-                for target in named_bill_targets:
+                for target in named_completion_targets:
                     normalized_target = _normalize_title(target)
                     candidates = [
                         record
@@ -742,8 +1079,8 @@ class FamilyContextAgent:
                     ]
                     if len(candidates) != 1:
                         state.assistant_message = (
-                            f"I couldn't uniquely match **{target}** to an active bill. "
-                            "No bills were changed. Please specify the bill title."
+                            f"I couldn't uniquely match **{target}** to an active commitment. "
+                            "No commitments were changed. Please specify the titles."
                         )
                         state.requires_clarification = True
                         return state
@@ -788,7 +1125,7 @@ class FamilyContextAgent:
                 response_parts = []
                 if completed_titles:
                     response_parts.append(
-                        "Marked paid/completed: "
+                        "Marked completed: "
                         + ", ".join(completed_titles)
                         + "."
                     )
@@ -908,10 +1245,36 @@ If the context is insufficient, use the appropriate tool
 or ask the user for clarification.
 """
 
+        dependency_context = ""
+        if _is_dependency_request(state.user_message):
+            earlier_plans = [
+                str(item.get("content") or "")
+                for item in state.history
+                if item.get("role") == "user"
+                and re.search(r"\bbefore\b", str(item.get("content") or ""), re.I)
+            ]
+            if earlier_plans:
+                dependency_context = """
+
+DEPENDENCY FOLLOW-UP
+====================
+
+The user is asking to set up dependencies for plans they already described.
+Use the earlier conversation to identify each prerequisite and its target event.
+For a statement that errands must happen before an event, create each errand as
+the source and the event as the target of MUST_COMPLETE_BEFORE. Search for the
+commitments first and reuse matching records. If the earlier turn only proposed
+the commitments and they do not exist yet, create them from the explicit details
+in that turn, then use their returned IDs to create the dependency links. Do not
+ask the user to repeat titles or confirm a relationship that was stated clearly.
+Ask only if the conversation does not identify a source or target unambiguously.
+Report which commitments and dependency links were actually created.
+"""
+
         messages = [
             {
                 "role": "system",
-                "content": SYSTEM_PROMPT + context_section,
+                "content": SYSTEM_PROMPT + context_section + dependency_context,
             },
         ]
 
@@ -959,10 +1322,17 @@ or ask the user for clarification.
             )
 
             if not response.tool_calls:
+                created_links = await _create_missing_prerequisite_links(
+                    state, self.tool_registry
+                )
                 state.assistant_message = (
                     response.content
                     or "I couldn't generate a response."
                 )
+                if created_links:
+                    state.assistant_message += (
+                        " Dependencies created: " + " ".join(created_links)
+                    )
                 return state
 
             assistant_message = {
@@ -1309,9 +1679,9 @@ or ask the user for clarification.
                     }
                 )
 
-        state.assistant_message = (
-            "I couldn't complete the request safely. "
-            "Please try again."
+        await _create_missing_prerequisite_links(state, self.tool_registry)
+        state.assistant_message = _summarize_successful_actions(state) or (
+            "I couldn't complete the request safely. Please try again."
         )
         return state
 
