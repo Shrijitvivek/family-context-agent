@@ -107,6 +107,44 @@ def _requests_all_overdue_completion(message: str) -> bool:
     )
 
 
+def _named_bill_completion_targets(
+    message: str, history: list[dict] | None = None
+) -> list[str]:
+    """Extract explicitly named bill titles from a multi-item paid request."""
+    if not re.search(
+        r"\b(?:paid|pay|completed|complete|done|finished)\b", message, re.I
+    ):
+        if re.search(r"\b(?:both|all)\s+(?:the\s+)?bills\b", message, re.I):
+            for item in reversed(history or []):
+                if item.get("role") != "assistant":
+                    continue
+                prior = str(item.get("content") or "")
+                if not re.search(r"\b(?:paid|completed|which bills)\b", prior, re.I):
+                    continue
+                listed = re.findall(r"(?m)^\s*[-*]\s*(.+?bill)\s*$", prior, re.I)
+                if len(listed) > 1:
+                    return [title.strip() for title in listed]
+        return []
+    targets: list[str] = []
+    # Split list connectors first so words such as "and" cannot be mistaken
+    # for part of the following title (for example, "and water bill").
+    for segment in re.split(r"\s+(?:and|&)\s+|,", message, flags=re.I):
+        match = re.search(
+            r"\b([a-z][a-z0-9'’-]*(?:\s+[a-z][a-z0-9'’-]*){0,2}?\s+bill)\b",
+            segment,
+            re.I,
+        )
+        if match:
+            targets.append(match.group(1).strip())
+        elif re.search(r"\b(?:bill|bills)\b", message, re.I):
+            # In "Electricity and Water Bill", the final noun applies to both.
+            words = re.findall(r"[a-z][a-z0-9'’-]*", segment, re.I)
+            if words and words[-1].casefold() not in {"paid", "pay", "completed", "complete", "done", "finished"}:
+                targets.append(" ".join(words) + " Bill")
+    # This path is specifically for an explicit list, not ordinary one-item updates.
+    return targets if len(targets) > 1 else []
+
+
 def _past_due_creation_confirmation(state: AgentState) -> str | None:
     """Ask once before adding a new commitment with a past due date."""
     if _past_due_confirmation_source(state) is not None:
@@ -637,8 +675,15 @@ class FamilyContextAgent:
         complete_all_overdue = _requests_all_overdue_completion(
             state.user_message
         )
+        named_bill_targets = _named_bill_completion_targets(
+            state.user_message, state.history
+        )
 
-        if show_active_commitments or complete_all_overdue:
+        if (
+            show_active_commitments
+            or complete_all_overdue
+            or named_bill_targets
+        ):
             search_arguments = {
                 "family_id": str(state.family_id),
             }
@@ -680,6 +725,77 @@ class FamilyContextAgent:
                 and str(record.get("status", "")).upper().split(".")[-1]
                 in {"PENDING", "OVERDUE"}
             ]
+
+            if named_bill_targets:
+                def _normalize_title(value: str) -> str:
+                    return " ".join(re.findall(r"[a-z0-9]+", value.casefold()))
+
+                matches: list[dict] = []
+                for target in named_bill_targets:
+                    normalized_target = _normalize_title(target)
+                    candidates = [
+                        record
+                        for record in active_records
+                        if normalized_target in _normalize_title(
+                            str(record.get("title") or "")
+                        )
+                    ]
+                    if len(candidates) != 1:
+                        state.assistant_message = (
+                            f"I couldn't uniquely match **{target}** to an active bill. "
+                            "No bills were changed. Please specify the bill title."
+                        )
+                        state.requires_clarification = True
+                        return state
+                    if candidates[0] not in matches:
+                        matches.append(candidates[0])
+
+                completed_titles: list[str] = []
+                failed_titles: list[str] = []
+                for record in matches:
+                    title = str(record.get("title") or "Untitled commitment")
+                    update_arguments = {
+                        "family_id": str(state.family_id),
+                        "commitment_id": str(record["id"]),
+                        "status": "COMPLETED",
+                    }
+                    try:
+                        update_result = await self.tool_registry.execute(
+                            "update_commitment", update_arguments
+                        )
+                    except Exception as exc:
+                        update_result = {"success": False, "error": str(exc)}
+                    state.tool_calls.append(
+                        {
+                            "name": "update_commitment",
+                            "arguments": update_arguments,
+                        }
+                    )
+                    state.tool_results.append(
+                        {
+                            "tool": "update_commitment",
+                            "result": update_result,
+                        }
+                    )
+                    if (
+                        isinstance(update_result, dict)
+                        and update_result.get("success", False)
+                    ):
+                        completed_titles.append(title)
+                    else:
+                        failed_titles.append(title)
+
+                response_parts = []
+                if completed_titles:
+                    response_parts.append(
+                        "Marked paid/completed: "
+                        + ", ".join(completed_titles)
+                        + "."
+                    )
+                if failed_titles:
+                    response_parts.append("Could not complete: " + ", ".join(failed_titles) + ".")
+                state.assistant_message = " ".join(response_parts)
+                return state
 
             if show_active_commitments:
                 completed_search_arguments = {
