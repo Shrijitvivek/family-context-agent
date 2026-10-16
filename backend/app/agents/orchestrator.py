@@ -12,6 +12,7 @@ from app.tools.registry import ToolRegistry
 from app.utils.dates import (
     resolve_commitment_due_date,
     resolve_expense_date,
+    today_in,
 )
 import re
 from decimal import Decimal, InvalidOperation
@@ -25,6 +26,12 @@ _CONFIRMATION_REPLIES = {
     "yeah",
     "yep",
     "correct",
+    "that's correct",
+    "yes that's correct",
+    "yes, that's correct",
+    "yes it is correct",
+    "yes it's correct",
+    "that date is correct",
     "that's right",
     "that is right",
     "right",
@@ -100,6 +107,58 @@ def _requests_all_overdue_completion(message: str) -> bool:
     )
 
 
+def _past_due_creation_confirmation(state: AgentState) -> str | None:
+    """Ask once before adding a new commitment with a past due date."""
+    if _past_due_confirmation_source(state) is not None:
+        return None
+    message = state.user_message
+    if not re.search(r"\b(?:create|add|record|save|track|log)\b", message, re.I):
+        return None
+    if not re.search(
+        r"\b(?:bill|commitment|appointment|test|deadline|renewal)\b",
+        message,
+        re.I,
+    ):
+        return None
+
+    try:
+        due_date = resolve_commitment_due_date(
+            message,
+            get_settings().family_timezone,
+        )
+    except ValueError:
+        return None
+    if due_date >= today_in(get_settings().family_timezone):
+        return None
+
+    message_without_date = re.sub(
+        r"\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{4})\b",
+        " ",
+        message,
+    )
+    amount_tokens = re.findall(
+        r"(?<![\w.])\d[\d,]*(?:\.\d{1,2})?(?![\w.])",
+        message_without_date,
+    )
+    amount_missing = len(amount_tokens) == 0
+
+    question = (
+        f"The due date you gave, {due_date.isoformat()}, is in the past. "
+        "Is that date intentional?"
+    )
+    if amount_missing:
+        question += (
+            " Please reply with the amount and confirmation together "
+            "(for example, ‘336, yes, the date is correct’). If the date was "
+            "a mistake, send the corrected date and amount."
+        )
+    else:
+        question += (
+            " Reply yes to save it as overdue, or send a corrected due date."
+        )
+    return question
+
+
 def _requests_to_show(message: str) -> bool:
     return bool(
         re.search(
@@ -114,37 +173,42 @@ def _requests_commitment_list(state: AgentState) -> bool:
     if not _requests_to_show(state.user_message):
         return False
 
-    explicitly_mentions_commitments = bool(
+    explicitly_requests_general_list = bool(
         re.search(
-            r"\b(?:commitments?|tasks?|bills?|appointments?)\b",
+            r"\b(?:show|list|display|see)\s+"
+            r"(?:(?:me|my|all|active|current|the)\s+)*"
+            r"(?:commitments?|tasks?|bills?|appointments?)\b",
             state.user_message,
             re.IGNORECASE,
         )
     )
-    follows_commitment_request = any(
-        item.get("role") == "user"
-        and (
-            _requests_all_overdue_completion(item.get("content", ""))
-            or re.search(
-                r"\b(?:commitments?|tasks?|bills?|appointments?)\b",
-                item.get("content", ""),
-                re.IGNORECASE,
-            )
+    is_pronominal_followup = bool(
+        re.fullmatch(
+            r"\s*(?:please\s+)?(?:show|list|display|see)\s+"
+            r"(?:it|them|those|that)\s*[.!?]*\s*",
+            state.user_message,
+            re.IGNORECASE,
         )
+    )
+    follows_all_overdue_request = is_pronominal_followup and any(
+        item.get("role") == "user"
+        and _requests_all_overdue_completion(item.get("content", ""))
         for item in state.history
     )
-    return explicitly_mentions_commitments or follows_commitment_request
+    return explicitly_requests_general_list or follows_all_overdue_request
 
 
 def _prerequisite_due_date(
     state: AgentState,
     title: str,
     target_due_date: date,
+    source_message: str | None = None,
 ) -> date | None:
     """Infer a due date for a named prerequisite placed before a dated event."""
+    message = source_message or state.user_message
     match = re.search(
         r"\bbefore\s+that\b(?P<source>.*)$",
-        state.user_message,
+        message,
         re.IGNORECASE,
     )
     if not match or not title.strip():
@@ -161,6 +225,140 @@ def _prerequisite_due_date(
         )
     except ValueError:
         return target_due_date - timedelta(days=1)
+
+
+def _past_due_confirmation_source(state: AgentState) -> str | None:
+    """Return the user's original request after our past-date confirmation."""
+    history = list(state.history)
+    if (
+        history
+        and history[-1].get("role") == "user"
+        and history[-1].get("content", "").strip()
+        == state.user_message.strip()
+    ):
+        history.pop()
+
+    assistant_index = next(
+        (
+            index
+            for index in range(len(history) - 1, -1, -1)
+            if history[index].get("role") == "assistant"
+        ),
+        None,
+    )
+    if assistant_index is None:
+        return None
+
+    assistant_text = history[assistant_index].get("content", "").casefold()
+    asks_about_past_date = (
+        "in the past" in assistant_text
+        and any(
+            term in assistant_text
+            for term in ("confirm", "intentional", "correct", "mistake", "different date")
+        )
+    )
+    if not asks_about_past_date:
+        return None
+
+    for item in reversed(history[:assistant_index]):
+        if item.get("role") != "user":
+            continue
+        content = item.get("content", "")
+        try:
+            resolve_commitment_due_date(
+                content,
+                get_settings().family_timezone,
+            )
+        except ValueError:
+            continue
+        return content
+    return None
+
+
+def _confirms_past_due_date(state: AgentState) -> bool:
+    if _past_due_confirmation_source(state) is None:
+        return False
+    message = state.user_message.casefold()
+    if re.search(r"\b(?:no|not|mistake|different|instead)\b", message):
+        return False
+    return bool(
+        re.search(r"\b(?:yes|correct|intentional|that's right|right)\b", message)
+    )
+
+
+def _commitment_date_source(state: AgentState) -> str:
+    if _confirms_past_due_date(state):
+        confirmed_source = _past_due_confirmation_source(state)
+        if confirmed_source:
+            return confirmed_source
+
+    try:
+        resolve_commitment_due_date(
+            state.user_message,
+            get_settings().family_timezone,
+        )
+        return state.user_message
+    except ValueError:
+        pass
+
+    history = list(state.history)
+    if (
+        history
+        and history[-1].get("role") == "user"
+        and history[-1].get("content", "").strip()
+        == state.user_message.strip()
+    ):
+        history.pop()
+
+    assistant_index = next(
+        (
+            index
+            for index in range(len(history) - 1, -1, -1)
+            if history[index].get("role") == "assistant"
+        ),
+        None,
+    )
+    if assistant_index is None:
+        return state.user_message
+
+    question = history[assistant_index].get("content", "").casefold()
+    clarification_terms = (
+        "commitment",
+        "bill",
+        "amount",
+        "due date",
+        "date",
+        "category",
+        "title",
+        "what should i call",
+    )
+    if "?" not in question or not any(
+        term in question for term in clarification_terms
+    ):
+        return state.user_message
+
+    previous_assistant_index = next(
+        (
+            index
+            for index in range(assistant_index - 1, -1, -1)
+            if history[index].get("role") == "assistant"
+        ),
+        -1,
+    )
+    for item in reversed(history[previous_assistant_index + 1 : assistant_index]):
+        if item.get("role") != "user":
+            continue
+        content = item.get("content", "")
+        try:
+            resolve_commitment_due_date(
+                content,
+                get_settings().family_timezone,
+            )
+        except ValueError:
+            continue
+        return content
+
+    return state.user_message
 
 
 def _format_commitment_list(
@@ -429,6 +627,12 @@ class FamilyContextAgent:
         self.tool_registry = tool_registry
 
     async def run(self, state: AgentState) -> AgentState:
+        past_due_question = _past_due_creation_confirmation(state)
+        if past_due_question is not None:
+            state.assistant_message = past_due_question
+            state.requires_clarification = True
+            return state
+
         show_active_commitments = _requests_commitment_list(state)
         complete_all_overdue = _requests_all_overdue_completion(
             state.user_message
@@ -701,10 +905,29 @@ or ask the user for clarification.
                     ).upper()
 
                     if commitment_type in _DATE_REQUIRED_COMMITMENT_TYPES:
+                        confirmation_source = _past_due_confirmation_source(state)
+                        confirmation_reply = _confirms_past_due_date(state)
+                        date_source = _commitment_date_source(state)
+
+                        if confirmation_source and not confirmation_reply:
+                            try:
+                                resolve_commitment_due_date(
+                                    state.user_message,
+                                    get_settings().family_timezone,
+                                )
+                            except ValueError:
+                                state.assistant_message = (
+                                    "Please provide the corrected due date. "
+                                    "I won't save the previously suggested past date."
+                                )
+                                state.requires_clarification = True
+                                return state
+                            date_source = state.user_message
+
                         try:
                             resolved_due_date = (
                                 resolve_commitment_due_date(
-                                    state.user_message,
+                                    date_source,
                                     get_settings().family_timezone,
                                 )
                             )
@@ -714,10 +937,39 @@ or ask the user for clarification.
                             # clarification layer to ask for a date.
                             arguments.pop("due_date", None)
                         else:
+                            if (
+                                resolved_due_date
+                                < today_in(get_settings().family_timezone)
+                                and not (
+                                    confirmation_source and confirmation_reply
+                                )
+                            ):
+                                title = str(
+                                    arguments.get("title", "this commitment")
+                                )
+                                state.assistant_message = (
+                                    f"The due date for '{title}' is "
+                                    f"{resolved_due_date.isoformat()}, which is in the past. "
+                                    "Is that date intentional?"
+                                )
+                                if arguments.get("amount") is None:
+                                    state.assistant_message += (
+                                        " Please reply with the amount and confirmation "
+                                        "together (for example, ‘336, yes, the date is correct’)."
+                                    )
+                                else:
+                                    state.assistant_message += (
+                                        " Reply yes to save it as overdue, or send a "
+                                        "corrected due date."
+                                    )
+                                state.requires_clarification = True
+                                return state
+
                             inferred_prerequisite_date = _prerequisite_due_date(
                                 state,
                                 str(arguments.get("title", "")),
                                 resolved_due_date,
+                                source_message=date_source,
                             )
                             if inferred_prerequisite_date is not None:
                                 resolved_due_date = inferred_prerequisite_date

@@ -88,6 +88,12 @@ IMPORTANT DATE RULES:
 
 - Never guess a year or date for a supported relative date phrase.
 
+- Past due dates are valid for forgotten commitments. If a user provides a
+  past due date, ask whether it is intentional before creating the commitment.
+  Ask for the amount and date confirmation in one message when either is
+  missing. After confirmation, create it with the supplied date; the application
+  will mark it OVERDUE. Never claim that the system cannot accept past dates.
+
 - If the user says an undated prerequisite must happen "before that" and
   gives the dependent commitment's date, assign the prerequisite a due date
   one calendar day before the dated commitment. Do not ask for another date
