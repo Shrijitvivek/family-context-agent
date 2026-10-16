@@ -90,6 +90,49 @@ def _commitment_search_filters(state: AgentState) -> dict[str, str]:
     return filters
 
 
+def _requests_all_overdue_completion(message: str) -> bool:
+    normalized = message.casefold()
+    return bool(
+        re.search(r"\b(?:all|every)\b", normalized)
+        and re.search(r"\boverdue\b", normalized)
+        and re.search(r"\b(?:complete|completed|done|finish|finished)\b", normalized)
+    )
+
+
+def _requests_to_show(message: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(?:show|list|display|see)\b|\bwhat are they\b|\bwhich ones\b",
+            message,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _follows_all_overdue_request(state: AgentState) -> bool:
+    if not _requests_to_show(state.user_message):
+        return False
+
+    return any(
+        item.get("role") == "user"
+        and _requests_all_overdue_completion(item.get("content", ""))
+        for item in state.history
+    )
+
+
+def _format_commitment_list(records: list[dict]) -> str:
+    if not records:
+        return "There are no overdue commitments."
+
+    lines = ["Overdue commitments:"]
+    for record in records:
+        title = record.get("title") or "Untitled commitment"
+        due_date = record.get("due_date")
+        suffix = f" (due {due_date})" if due_date else ""
+        lines.append(f"- {title}{suffix}")
+    return "\n".join(lines)
+
+
 def _expense_date_source(state: AgentState) -> str:
     """Preserve date intent through an expense clarification exchange."""
     history = list(state.history)
@@ -288,6 +331,109 @@ class FamilyContextAgent:
         self.tool_registry = tool_registry
 
     async def run(self, state: AgentState) -> AgentState:
+        show_overdue_followup = _follows_all_overdue_request(state)
+        complete_all_overdue = _requests_all_overdue_completion(
+            state.user_message
+        )
+
+        if show_overdue_followup or complete_all_overdue:
+            search_arguments = {
+                "family_id": str(state.family_id),
+                "status": "OVERDUE",
+            }
+            search_result = await self.tool_registry.execute(
+                "search_commitments",
+                search_arguments,
+            )
+            state.tool_calls.append(
+                {
+                    "name": "search_commitments",
+                    "arguments": search_arguments,
+                }
+            )
+            state.tool_results.append(
+                {
+                    "tool": "search_commitments",
+                    "result": search_result,
+                }
+            )
+
+            if (
+                not isinstance(search_result, dict)
+                or not search_result.get("success", False)
+                or not isinstance(search_result.get("commitments"), list)
+            ):
+                state.assistant_message = (
+                    "I couldn't retrieve the overdue commitments. Please try again."
+                )
+                state.requires_clarification = True
+                return state
+
+            overdue_records = [
+                record
+                for record in search_result["commitments"]
+                if isinstance(record, dict)
+                and record.get("id") is not None
+                and str(record.get("status", "")).upper().split(".")[-1]
+                == "OVERDUE"
+            ]
+
+            if show_overdue_followup:
+                state.assistant_message = _format_commitment_list(overdue_records)
+                return state
+
+            if not overdue_records:
+                state.assistant_message = "There are no overdue commitments to complete."
+                return state
+
+            completed_titles: list[str] = []
+            failed_titles: list[str] = []
+            for record in overdue_records:
+                update_arguments = {
+                    "family_id": str(state.family_id),
+                    "commitment_id": str(record["id"]),
+                    "status": "COMPLETED",
+                }
+                update_result = await self.tool_registry.execute(
+                    "update_commitment",
+                    update_arguments,
+                )
+                state.tool_calls.append(
+                    {
+                        "name": "update_commitment",
+                        "arguments": update_arguments,
+                    }
+                )
+                state.tool_results.append(
+                    {
+                        "tool": "update_commitment",
+                        "result": update_result,
+                    }
+                )
+                if (
+                    isinstance(update_result, dict)
+                    and update_result.get("success", False)
+                ):
+                    completed_titles.append(
+                        str(record.get("title") or "Untitled commitment")
+                    )
+                else:
+                    failed_titles.append(
+                        str(record.get("title") or "Untitled commitment")
+                    )
+
+            response_parts = []
+            if completed_titles:
+                response_parts.append(
+                    "Marked completed: " + ", ".join(completed_titles) + "."
+                )
+            if failed_titles:
+                response_parts.append(
+                    "Could not complete: " + ", ".join(failed_titles) + "."
+                )
+            state.assistant_message = " ".join(response_parts)
+            return state
+
         context_section = ""
 
         if state.household_context:
