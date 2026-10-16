@@ -2,6 +2,7 @@
 """Orchestrate AI responses and family-context tool execution."""
 
 import json
+from datetime import date
 
 from app.agents.clarification import build_clarification
 from app.agents.prompts import SYSTEM_PROMPT
@@ -13,7 +14,6 @@ from app.utils.dates import (
     resolve_commitment_due_date,
     resolve_expense_date,
 )
-
 
 _CONFIRMATION_REPLIES = {
     "yes",
@@ -231,6 +231,9 @@ or ask the user for clarification.
                         resolved_date = resolve_expense_date(
                             _expense_date_source(state),
                             get_settings().family_timezone,
+                            today=date.fromisoformat(state.metadata["today"])
+                            if state.metadata.get("today")
+                            else None,
                         )
                     except ValueError as exc:
                         state.assistant_message = str(exc)
@@ -251,6 +254,9 @@ or ask the user for clarification.
                                 resolve_commitment_due_date(
                                     state.user_message,
                                     get_settings().family_timezone,
+                                    today=date.fromisoformat(state.metadata["today"])
+                                    if state.metadata.get("today")
+                                    else None,
                                 )
                             )
                         except ValueError:

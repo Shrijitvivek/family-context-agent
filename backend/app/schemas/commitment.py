@@ -52,6 +52,7 @@ class CommitmentCreate(BaseModel):
     start_date: date | None = None
     due_date: date | None = None
     status: CommitmentStatus = CommitmentStatus.PENDING
+    priority: Priority | None = None
     source_type: SourceType = SourceType.TEXT
     document_id: UUID | None = None
 

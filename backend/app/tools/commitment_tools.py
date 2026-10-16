@@ -47,8 +47,6 @@ from app.services.commitment import CommitmentService
 from app.services.document import DocumentService
 from app.utils.dates import today_in
 
-
-
 # Types that are meaningless without a date: ask instead of saving an undated bill.
 DATE_REQUIRED_TYPES = frozenset(
     {
@@ -478,6 +476,18 @@ async def update_commitment(
     previous_amount = current.amount
     previous_due_date = current.due_date
     previous_title = current.title
+
+    terminal_change = (
+        (payload.title is not None and payload.title != current.title)
+        or (payload.status is not None and payload.status != previous_status)
+        or (payload.amount is not None and payload.amount != current.amount)
+        or (payload.due_date is not None and payload.due_date != current.due_date)
+    )
+    if previous_status in TERMINAL_STATUSES and terminal_change:
+        raise ConflictError(
+            f"'{previous_title}' is already {previous_status.value} and cannot be changed.",
+            details={"current_status": previous_status.value},
+        )
 
     if payload.status is not None:
         _check_status_change(

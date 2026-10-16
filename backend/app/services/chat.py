@@ -1,5 +1,6 @@
 """Chat workflow service."""
 
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,13 +10,13 @@ from app.agents.state import AgentState
 from app.clients.ai_model import AIModelClient
 from app.repositories.agent_event import AgentEventRepository
 from app.repositories.commitment import CommitmentRepository
-from app.repositories.family import FamilyRepository
-from app.services.context import ContextService
 from app.repositories.conversation import ConversationRepository
 from app.repositories.document import DocumentRepository
 from app.repositories.expense import ExpenseRepository
+from app.repositories.family import FamilyRepository
 from app.repositories.notification import NotificationRepository
 from app.services.commitment import CommitmentService
+from app.services.context import ContextService
 from app.services.expense import ExpenseService
 from app.services.notification import NotificationService
 from app.services.priority import PriorityService
@@ -28,8 +29,10 @@ class ChatService:
     def __init__(
         self,
         session: AsyncSession,
+        today: date | None = None,
     ) -> None:
         self._session = session
+        self._today = today
 
         expense_repository = ExpenseRepository(session)
         commitment_repository = CommitmentRepository(session)
@@ -152,6 +155,7 @@ class ChatService:
         }
     ],
     metadata={
+        "today": self._today.isoformat() if getattr(self, "_today", None) else None,
         "document": {
             "file_name": document.file_name,
             "document_type": document.document_type,
