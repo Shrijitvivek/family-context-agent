@@ -93,7 +93,7 @@ async def test_agent_routes_expense_and_bill_to_different_real_tools(monkeypatch
     async with AsyncSessionLocal() as session:
         await _seed_family(session, family_id, member_id)
         try:
-            service = ChatService(session)
+            service = ChatService(session, today=TODAY)
             expense_result = await service.process_message(
                 family_id=family_id, member_id=member_id, conversation_id=None,
                 message="I spent ₹1,850 on groceries today.",

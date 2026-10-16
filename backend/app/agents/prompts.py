@@ -99,8 +99,9 @@ IMPORTANT DATE RULES:
   one calendar day before the dated commitment. Do not ask for another date
   unless the user supplies a different date for the prerequisite.
 
-- For example, if the current application date is October 8, 2026,
-  "this month end" means October 31, 2026.
+- The current application date is supplied in the request context. Use that
+  date to resolve relative dates such as "this month end"; do not substitute
+  a date from an example or from your own knowledge.
 
 
 COMMITMENT UPDATE RULES:

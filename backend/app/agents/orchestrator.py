@@ -791,10 +791,18 @@ If the context is insufficient, use the appropriate tool
 or ask the user for clarification.
 """
 
+        current_date = state.metadata.get("today")
+        date_context = (
+            f"\n\nCURRENT APPLICATION DATE\n=========================\n"
+            f"Today is {current_date}. Use this date for date questions and relative dates."
+            if current_date
+            else ""
+        )
+
         messages = [
             {
                 "role": "system",
-                "content": SYSTEM_PROMPT + context_section,
+                "content": SYSTEM_PROMPT + context_section + date_context,
             },
         ]
 

@@ -34,7 +34,7 @@ class ChatService:
         today: date | None = None,
     ) -> None:
         self._session = session
-        self._today = today
+        self._today = today or today_in(get_settings().family_timezone)
 
         expense_repository = ExpenseRepository(session)
         commitment_repository = CommitmentRepository(session)
@@ -112,6 +112,10 @@ class ChatService:
     ) -> AgentState:
         """Run one user message through the agent."""
 
+        current_today = getattr(self, "_today", None) or today_in(
+            get_settings().family_timezone
+        )
+
         document = None
 
         if document_id:
@@ -167,7 +171,7 @@ class ChatService:
         }
     ],
     metadata={
-        "today": self._today.isoformat() if getattr(self, "_today", None) else None,
+        "today": current_today.isoformat(),
         "document": {
             "file_name": document.file_name,
             "document_type": document.document_type,
