@@ -174,7 +174,12 @@ async def test_judge_household_attention_completion_and_expense_journey(monkeypa
             expense_response.status_code == 200
             and len(expense_rows) == 2
             and sum(row.amount == Decimal("1850.00") for row in expense_rows) == 1
-            and any(row.category == "GROCERIES" and row.expense_date == TODAY for row in expense_rows if row.amount == Decimal("1850.00"))
+            and any(
+                row.category == "GROCERIES"
+                and row.expense_date == TODAY
+                for row in expense_rows
+                if row.amount == Decimal("1850.00")
+            )
         )
         expected["api_db_agree"] = (
             expenses_response.status_code == 200

@@ -264,9 +264,6 @@ class FamilyContextAgent:
                             get_settings().family_timezone,
                         )
                         arguments["expense_date"] = resolved_date.isoformat()
-                        # Tool arguments are model-proposed; the original user
-                        # message and application timezone determine the date.
-                        arguments["expense_date"] = resolved_date.isoformat()
 
                     if (
                         tool_call.name == "create_commitment"
@@ -304,10 +301,23 @@ class FamilyContextAgent:
                             )
                             return state
 
-                    result = await self.tool_registry.dispatch(
-                        tool_call.name,
-                        arguments,
+                    execute = getattr(
+                        self.tool_registry,
+                        "execute",
+                        None,
                     )
+
+                    if callable(execute):
+                        result = await execute(
+                            tool_call.name,
+                            arguments,
+                        )  # type: ignore
+                    else:
+                        result = await self.tool_registry.dispatch(
+                            tool_call.name,
+                            arguments,
+                        )
+
                     failure_code = None
                     if isinstance(result, dict) and result.get("success") is False:
                         error = result.get("error")
