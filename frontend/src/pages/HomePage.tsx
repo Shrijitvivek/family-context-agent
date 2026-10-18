@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { useFamily } from "../context/FamilyContext";
 import {
@@ -20,6 +21,8 @@ import {
   type Expense,
 } from "../services/api/expenses";
 import { getDocuments } from "../services/api/documents";
+import { getTimeline } from "../services/api/timeline";
+import type { Commitment as TimelineCommitment } from "../types/domain";
 
 type IconName =
   | "calendar"
@@ -276,8 +279,11 @@ function SectionHeading({
 
 export default function HomePage() {
   const { selectedFamilyId, selectedMemberId, members } = useFamily();
+  const navigate = useNavigate();
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
 
   const [upcomingItems, setUpcomingItems] = useState<Commitment[]>([]);
+  const [timelineItems, setTimelineItems] = useState<TimelineCommitment[]>([]);
   const [priorities, setPriorities] = useState<Priority[]>([]);
   const [recentExpenses, setRecentExpenses] = useState<Expense[]>([]);
   const [expenseTotal, setExpenseTotal] = useState<number | null>(null);
@@ -293,12 +299,47 @@ export default function HomePage() {
 
   // Extract only the first name of the selected member if available
   const firstName = selectedMember?.name ? selectedMember.name.split(" ")[0] : null;
+  const now = new Date();
+  const greeting = now.getHours() < 12 ? "morning" : now.getHours() < 17 ? "afternoon" : "evening";
+  const todayLabel = now.toLocaleDateString("en-IN", {
+    weekday: "long", day: "numeric", month: "long", year: "numeric",
+  }).toUpperCase();
+  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const monthStart = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
+  const monthDays = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0).getDate();
+  const calendarOffset = monthStart.getDay();
+  const monthLabel = calendarMonth.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+  const commitmentsForCalendar = upcomingItems.filter((item) => item.due_date).map((item) => {
+    const date = new Date(item.due_date!);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  });
+  const visiblePriorities = priorities.slice(0, 4);
+  const activityItems = [
+    ...recentExpenses.map((expense) => ({
+      key: `expense-${expense.id}`, title: "Expense recorded", detail: expense.description || expense.category,
+      date: expense.date ? new Date(expense.date) : null, amount: expense.amount,
+    })),
+    ...upcomingItems.slice(0, 4).map((item) => ({
+      key: `commitment-${item.id}`, title: "Commitment", detail: item.title,
+      date: item.due_date ? new Date(item.due_date) : null, amount: null as number | null,
+    })),
+  ].sort((a, b) => (b.date?.getTime() ?? 0) - (a.date?.getTime() ?? 0)).slice(0, 4);
+  const relativeDate = (value: Date | null) => {
+    if (!value || Number.isNaN(value.getTime())) return "Date unavailable";
+    const days = Math.floor((new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime()) / 86400000);
+    if (days === 0) return "Today";
+    if (days === 1) return "Yesterday";
+    if (days > 1) return `${days} days ago`;
+    if (days === -1) return "Tomorrow";
+    return `In ${Math.abs(days)} days`;
+  };
 
   useEffect(() => {
     let cancelled = false;
 
     if (!selectedFamilyId) {
       setUpcomingItems([]);
+      setTimelineItems([]);
       setPriorities([]);
       setRecentExpenses([]);
       setExpenseTotal(null);
@@ -314,13 +355,14 @@ export default function HomePage() {
 
       try {
         const familyId = selectedFamilyId!;
-        const [commitments, summary, expenses, documents, priorityItems] =
+        const [commitments, summary, expenses, documents, priorityItems, timeline] =
           await Promise.all([
             getUpcomingCommitments(familyId, selectedMemberId),
             getExpenseSummary(familyId, selectedMemberId),
             getExpenses(familyId, selectedMemberId),
             getDocuments(familyId, selectedMemberId),
             getPriorities(familyId),
+            getTimeline(familyId),
           ]);
 
         if (cancelled) return;
@@ -341,6 +383,11 @@ export default function HomePage() {
           : expenses;
 
         setUpcomingItems(visibleCommitments);
+        // Home-page tasks are personal: exclude unassigned/shared family commitments.
+        const personalTimelineItems = selectedMemberId
+          ? timeline.items.filter((item) => item.memberId === selectedMemberId)
+          : timeline.items.filter((item) => item.memberId != null);
+        setTimelineItems(personalTimelineItems);
         setExpenseTotal(Number(summary.total));
         setRecentExpenses(visibleExpenses.slice(0, 3));
         setDocumentCount(documents.length);
@@ -364,9 +411,59 @@ export default function HomePage() {
     };
   }, [selectedFamilyId, selectedMemberId, retryKey]);
 
-  const pendingCount = upcomingItems.filter(
-    (item) => item.status.toUpperCase() === "PENDING",
-  ).length;
+  // Upcoming commitments are future-dated, unfinished items in the next 7 days.
+  // Today's commitments are counted separately under Today's tasks.
+  const upcomingNext7Days = upcomingItems
+    .filter((item) => {
+      if (!item.due_date) return false;
+      const due = new Date(item.due_date);
+      if (Number.isNaN(due.getTime())) return false;
+      const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const nextWeek = new Date(today);
+      nextWeek.setDate(nextWeek.getDate() + 7);
+      const status = String(item.status ?? "").toUpperCase();
+      return dueDay > today && dueDay <= nextWeek &&
+        status !== "COMPLETED" && status !== "CANCELLED";
+    })
+    .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime());
+
+  // Show only personal tasks that are overdue, critical/urgent, or due today.
+  const todayTasks = timelineItems
+    .filter((item) => {
+      const status = String(item.status ?? "").toLowerCase();
+      const priority = String(item.priority ?? "").toLowerCase();
+      const due = item.dueDate ? new Date(item.dueDate) : null;
+      const hasValidDueDate = Boolean(due && !Number.isNaN(due.getTime()));
+      const isDueToday = Boolean(
+        hasValidDueDate &&
+        due!.getFullYear() === now.getFullYear() &&
+        due!.getMonth() === now.getMonth() &&
+        due!.getDate() === now.getDate()
+      );
+      const isOverdue = status === "overdue" || Boolean(
+        hasValidDueDate &&
+        new Date(due!.getFullYear(), due!.getMonth(), due!.getDate()) <
+          new Date(now.getFullYear(), now.getMonth(), now.getDate()) &&
+        status !== "completed" &&
+        status !== "cancelled"
+      );
+      const isCritical = ["critical", "urgent"].includes(priority);
+      return status !== "completed" && status !== "cancelled" &&
+        (isOverdue || isCritical || isDueToday);
+    })
+    .sort((a, b) => {
+      const rank = (item: TimelineCommitment) => {
+        const status = String(item.status ?? "").toLowerCase();
+        const priority = String(item.priority ?? "").toLowerCase();
+        if (status === "overdue") return 0;
+        if (["critical", "urgent"].includes(priority)) return 1;
+        return 2;
+      };
+      const rankDifference = rank(a) - rank(b);
+      if (rankDifference !== 0) return rankDifference;
+      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+    });
 
   return (
     <main className="mx-auto w-full max-w-[1600px] space-y-5 pb-8 sm:space-y-6 font-sans">
@@ -391,13 +488,13 @@ export default function HomePage() {
         <div className="flex min-h-[220px] flex-col justify-between px-6 py-6 sm:min-h-[230px] sm:px-8 lg:min-h-[245px] lg:px-10">
           <div className="flex justify-between items-start">
             <span className="text-xs font-semibold text-slate-500 tracking-wider">
-              SUNDAY, 11 OCTOBER 2026
+              {todayLabel}
             </span>
           </div>
 
           <div className="max-w-2xl">
             <h1 className="text-3xl font-bold tracking-[-0.055em] text-slate-950 sm:text-4xl lg:text-[40px]">
-              Good afternoon, {firstName ? firstName : "family"} 👋
+              Good {greeting}, {firstName ? firstName : "family"} 👋
             </h1>
             <p className="mt-2 max-w-lg text-sm text-slate-600 sm:text-base leading-relaxed">
               Stay on top of what matters. Keep track of commitments, expenses
@@ -408,6 +505,7 @@ export default function HomePage() {
           <div>
             <button
               type="button"
+              onClick={() => navigate("/timeline")}
               className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white shadow hover:bg-slate-800 transition"
             >
               View today's plan
@@ -421,14 +519,12 @@ export default function HomePage() {
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Surface className="p-5 flex justify-between items-start">
           <div>
-            <p className="text-xs font-medium text-slate-500">
-              Upcoming commitments
-            </p>
+            <p className="text-xs font-medium text-slate-500">Today's tasks</p>
             <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
-              {loading ? "—" : upcomingItems.length}
+              {loading ? "—" : todayTasks.length}
             </p>
-            <p className="mt-1 text-xs text-emerald-600 font-medium">
-              +2 from last week
+            <p className="mt-1 text-xs text-slate-500 font-medium">
+              Overdue, critical, or due today
             </p>
           </div>
           <IconTile icon="calendar" tone="violet" size="md" />
@@ -436,12 +532,12 @@ export default function HomePage() {
 
         <Surface className="p-5 flex justify-between items-start">
           <div>
-            <p className="text-xs font-medium text-slate-500">Pending items</p>
+            <p className="text-xs font-medium text-slate-500">Upcoming commitments</p>
             <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
-              {loading ? "—" : pendingCount}
+              {loading ? "—" : upcomingNext7Days.length}
             </p>
-            <p className="mt-1 text-xs text-amber-600 font-medium">
-              3 high priority
+            <p className="mt-1 text-xs text-slate-500 font-medium">
+              Scheduled in the next 7 days
             </p>
           </div>
           <IconTile icon="check" tone="green" size="md" />
@@ -455,8 +551,8 @@ export default function HomePage() {
             <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
               {expenseTotal === null ? "—" : formatCurrency(expenseTotal)}
             </p>
-            <p className="mt-1 text-xs text-rose-600 font-medium">
-              -12% from last month
+            <p className="mt-1 text-xs text-slate-500 font-medium">
+              {recentExpenses.length} recent transaction{recentExpenses.length === 1 ? "" : "s"} shown below
             </p>
           </div>
           <IconTile icon="wallet" tone="rose" size="md" />
@@ -470,155 +566,163 @@ export default function HomePage() {
             <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
               {documentCount ?? 0}
             </p>
-            <p className="mt-1 text-xs text-slate-400 font-medium">
-              No new documents
+            <p className="mt-1 text-xs text-slate-500 font-medium">
+              Stored family documents
             </p>
           </div>
           <IconTile icon="file" tone="blue" size="md" />
         </Surface>
       </section>
 
-      {/* Main Grid: Today's commitments, Priority items, Calendar */}
+      {/* Main Grid: Today's tasks, Upcoming commitments, Calendar */}
       <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-        {/* Today's commitments */}
+        {/* Today's tasks: only tasks assigned to this member, not shared family commitments */}
         <Surface className="p-5">
           <SectionHeading
             icon="calendar"
-            title="Today's commitments"
-            actionText="View all"
+            title="Today's tasks"
+            actionText="View timeline"
+            onAction={() => navigate("/timeline")}
           />
+          <p className="mt-1 text-[11px] text-slate-500">
+            Your overdue, critical, and due-today tasks.
+          </p>
           <div className="mt-4 divide-y divide-slate-100">
-            {[
-              {
-                date: "08 Oct",
-                title: "Kavya's term fee",
-                time: "All day",
-                status: "Overdue",
-                color: "bg-rose-500",
-              },
-              {
-                date: "11 Oct",
-                title: "KSEB Electricity Bill",
-                time: "All day",
-                status: "Pending",
-                color: "bg-amber-500",
-              },
-              {
-                date: "15 Oct",
-                title: "Amma's fasting blood sugar test",
-                time: "9:00 AM",
-                status: "Upcoming",
-                color: "bg-blue-500",
-              },
-              {
-                date: "18 Oct",
-                title: "Groceries restock",
-                time: "All day",
-                status: "Upcoming",
-                color: "bg-emerald-500",
-              },
-            ].map((item, idx) => (
-              pyItemRow(item, idx)
-            ))}
+            {loading ? (
+              <p className="py-6 text-center text-xs text-slate-500">Loading your tasks…</p>
+            ) : todayTasks.length ? (
+              todayTasks.slice(0, 5).map((item) => {
+                const due = item.dueDate ? new Date(item.dueDate) : null;
+                const status = String(item.status ?? "").toLowerCase();
+                const priority = String(item.priority ?? "").toLowerCase();
+                const isOverdue = status === "overdue" || Boolean(
+                  due && !Number.isNaN(due.getTime()) &&
+                  new Date(due.getFullYear(), due.getMonth(), due.getDate()) <
+                    new Date(now.getFullYear(), now.getMonth(), now.getDate()) &&
+                  status !== "completed" && status !== "cancelled"
+                );
+                const label = isOverdue ? "Overdue" :
+                  ["critical", "urgent"].includes(priority) ? "Critical" : "Due today";
+                return pyItemRow({
+                  date: due && !Number.isNaN(due.getTime())
+                    ? due.toLocaleDateString("en-IN", { day: "2-digit", month: "short" })
+                    : "No date",
+                  title: item.title,
+                  time: label,
+                  status: label,
+                  color: label === "Overdue" || label === "Critical"
+                    ? "bg-rose-500"
+                    : "bg-amber-500",
+                }, item.id);
+              })
+            ) : (
+              <div className="py-8 text-center">
+                <p className="text-sm font-medium text-slate-700">You're all caught up</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  No personal overdue, critical, or due-today tasks.
+                </p>
+              </div>
+            )}
           </div>
         </Surface>
 
-        {/* Priority items */}
+        {/* Upcoming commitments: future/current commitments, not priority records */}
         <Surface className="p-5">
           <SectionHeading
-            icon="flag"
-            tone="rose"
-            title="Priority items"
+            icon="calendar"
+            tone="violet"
+            title="Upcoming commitments"
             actionText="View all"
+            onAction={() => navigate("/timeline")}
           />
-          <div className="mt-4 space-y-3">
-            <div className="flex items-start justify-between p-3 rounded-xl bg-rose-50/50 border border-rose-100">
-              <div>
-                <p className="text-xs font-semibold text-slate-900">
-                  Kavya's term fee is overdue
-                </p>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Overdue since 8 Oct 2026
-                </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            What's coming up next for your family.
+          </p>
+          <div className="mt-4 divide-y divide-slate-100">
+            {loading ? (
+              <p className="py-6 text-center text-xs text-slate-500">Loading upcoming commitments…</p>
+            ) : upcomingItems.filter((item) => {
+              if (!item.due_date) return false;
+              const due = new Date(item.due_date);
+              return !Number.isNaN(due.getTime()) &&
+                new Date(due.getFullYear(), due.getMonth(), due.getDate()) >=
+                new Date(now.getFullYear(), now.getMonth(), now.getDate()) &&
+                item.status.toUpperCase() !== "COMPLETED" &&
+                item.status.toUpperCase() !== "CANCELLED";
+            }).sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime()).slice(0, 5).length ? (
+              upcomingItems.filter((item) => {
+                if (!item.due_date) return false;
+                const due = new Date(item.due_date);
+                return !Number.isNaN(due.getTime()) &&
+                  new Date(due.getFullYear(), due.getMonth(), due.getDate()) >=
+                  new Date(now.getFullYear(), now.getMonth(), now.getDate()) &&
+                  item.status.toUpperCase() !== "COMPLETED" &&
+                  item.status.toUpperCase() !== "CANCELLED";
+              }).sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime()).slice(0, 5).map((item) => {
+                const due = new Date(item.due_date!);
+                const isToday = due.getFullYear() === now.getFullYear() && due.getMonth() === now.getMonth() && due.getDate() === now.getDate();
+                return pyItemRow({
+                  date: due.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }),
+                  title: item.title,
+                  time: isToday ? "Today" : due.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true }),
+                  // Show the commitment's priority instead of a generic status like "Pending".
+                  status: (() => {
+                    const priority = String(
+                      (item as Commitment & { priority?: string }).priority ?? "",
+                    ).trim().toLowerCase();
+                    if (priority === "critical") return "Critical";
+                    if (priority === "high") return "High";
+                    if (priority === "medium") return "Medium";
+                    if (priority === "low") return "Low";
+                    return isToday ? "Today" : "No priority";
+                  })(),
+                  color: (() => {
+                    const priority = String(
+                      (item as Commitment & { priority?: string }).priority ?? "",
+                    ).trim().toLowerCase();
+                    if (priority === "critical") return "bg-rose-600";
+                    if (priority === "high") return "bg-orange-500";
+                    if (priority === "medium") return "bg-amber-500";
+                    if (priority === "low") return "bg-emerald-500";
+                    return isToday ? "bg-violet-500" : "bg-slate-400";
+                  })(),
+                }, item.id);
+              })
+            ) : (
+              <div className="py-8 text-center">
+                <p className="text-sm font-medium text-slate-700">No upcoming commitments</p>
+                <p className="mt-1 text-xs text-slate-500">Future family commitments will appear here.</p>
               </div>
-              <span className="px-2 py-0.5 text-[10px] font-semibold bg-rose-100 text-rose-700 rounded-md">
-                Critical
-              </span>
-            </div>
-
-            <div className="flex items-start justify-between p-3 rounded-xl bg-amber-50/50 border border-amber-100">
-              <div>
-                <p className="text-xs font-semibold text-slate-900">
-                  KSEB Electricity Bill is due tomorrow
-                </p>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Due on 11 Oct 2026
-                </p>
-              </div>
-              <span className="px-2 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-700 rounded-md">
-                High
-              </span>
-            </div>
-
-            <div className="flex items-start justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
-              <div>
-                <p className="text-xs font-semibold text-slate-900">
-                  Amma's fasting blood sugar test
-                </p>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Due in 4 days
-                </p>
-              </div>
-              <span className="px-2 py-0.5 text-[10px] font-semibold bg-blue-100 text-blue-700 rounded-md">
-                Medium
-              </span>
-            </div>
+            )}
           </div>
         </Surface>
 
         {/* Calendar widget */}
         <Surface className="p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-slate-900">
-              October 2026
-            </h3>
+            <h3 className="text-sm font-semibold text-slate-900">{monthLabel}</h3>
             <div className="flex gap-1 text-slate-400">
-              <button className="p-1 hover:bg-slate-100 rounded">‹</button>
-              <button className="p-1 hover:bg-slate-100 rounded">›</button>
+              <button type="button" aria-label="Previous month" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))} className="p-1 hover:bg-slate-100 rounded">‹</button>
+              <button type="button" aria-label="Next month" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))} className="p-1 hover:bg-slate-100 rounded">›</button>
             </div>
           </div>
           <div className="grid grid-cols-7 text-center text-[11px] font-medium text-slate-400 mb-2">
-            <span>Sun</span>
-            <span>Mon</span>
-            <span>Tue</span>
-            <span>Wed</span>
-            <span>Thu</span>
-            <span>Fri</span>
-            <span>Sat</span>
+            { ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <span key={day}>{day}</span>) }
           </div>
           <div className="grid grid-cols-7 gap-y-2 text-center text-xs">
-            {Array.from({ length: 31 }, (_, i) => {
-              const day = i + 1;
-              const isSelected = day === 11;
-              const hasDot = [1, 3, 15, 18, 21, 22].includes(day);
-              return (
-                <div key={day} className="flex flex-col items-center justify-center">
-                  <span
-                    className={`size-7 flex items-center justify-center rounded-full ${
-                      isSelected
-                        ? "bg-violet-600 text-white font-semibold"
-                        : "text-slate-700 hover:bg-slate-100"
-                    }`}
-                  >
-                    {day}
-                  </span>
-                  {hasDot && (
-                    <span className="size-1 rounded-full bg-violet-500 mt-0.5" />
-                  )}
-                </div>
-              );
+            {Array.from({ length: calendarOffset + monthDays }, (_, i) => {
+              if (i < calendarOffset) return <div key={`empty-${i}`} />;
+              const day = i - calendarOffset + 1;
+              const dateKey = `${calendarMonth.getFullYear()}-${String(calendarMonth.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+              const isToday = dateKey === todayKey;
+              const hasDot = commitmentsForCalendar.includes(dateKey);
+              return <div key={dateKey} className="flex flex-col items-center justify-center">
+                <span className={`size-7 flex items-center justify-center rounded-full ${isToday ? "bg-violet-600 text-white font-semibold" : "text-slate-700 hover:bg-slate-100"}`}>{day}</span>
+                {hasDot && <span className={`size-1 rounded-full mt-0.5 ${isToday ? "bg-violet-300" : "bg-violet-500"}`} />}
+              </div>;
             })}
           </div>
+          <p className="mt-3 text-[11px] text-slate-500">Dots indicate dates with commitments from your records.</p>
         </Surface>
       </section>
 
@@ -631,6 +735,7 @@ export default function HomePage() {
             tone="blue"
             title="Recent expenses"
             actionText="View all"
+            onAction={() => navigate("/expenses")}
           />
           <div className="mt-4 divide-y divide-slate-100">
             {recentExpenses.length > 0 ? (
@@ -650,41 +755,10 @@ export default function HomePage() {
                 </div>
               ))
             ) : (
-              <>
-                <div className="py-2.5 flex justify-between items-center">
-                  <div>
-                    <p className="text-xs font-semibold text-slate-900">
-                      Medical - Consultation
-                    </p>
-                    <p className="text-[11px] text-slate-500">10 Oct 2026</p>
-                  </div>
-                  <span className="text-xs font-semibold text-slate-900">
-                    ₹500.00
-                  </span>
-                </div>
-                <div className="py-2.5 flex justify-between items-center">
-                  <div>
-                    <p className="text-xs font-semibold text-slate-900">
-                      Groceries
-                    </p>
-                    <p className="text-[11px] text-slate-500">8 Oct 2026</p>
-                  </div>
-                  <span className="text-xs font-semibold text-slate-900">
-                    ₹1,250.00
-                  </span>
-                </div>
-                <div className="py-2.5 flex justify-between items-center">
-                  <div>
-                    <p className="text-xs font-semibold text-slate-900">
-                      Electricity Bill
-                    </p>
-                    <p className="text-[11px] text-slate-500">5 Oct 2026</p>
-                  </div>
-                  <span className="text-xs font-semibold text-slate-900">
-                    ₹2,180.00
-                  </span>
-                </div>
-              </>
+              <div className="py-8 text-center">
+                <p className="text-sm font-medium text-slate-700">No expenses recorded</p>
+                <p className="mt-1 text-xs text-slate-500">New expenses will appear here after they are added.</p>
+              </div>
             )}
           </div>
         </Surface>
@@ -693,25 +767,25 @@ export default function HomePage() {
         <Surface className="p-5">
           <SectionHeading icon="activity" tone="violet" title="Quick actions" />
           <div className="mt-4 grid grid-cols-2 gap-3">
-            <button className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-100 bg-slate-50 hover:bg-slate-100 transition text-center">
+            <button type="button" onClick={() => navigate("/timeline")} className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-100 bg-slate-50 hover:bg-slate-100 transition text-center">
               <Icon name="calendar" size={20} className="text-violet-600 mb-1.5" />
               <span className="text-xs font-semibold text-slate-800">
                 Add commitment
               </span>
             </button>
-            <button className="flex flex-col items-center justify-center p-4 rounded-xl border border-emerald-100 bg-emerald-50/50 hover:bg-emerald-100/50 transition text-center">
+            <button type="button" onClick={() => navigate("/expenses")} className="flex flex-col items-center justify-center p-4 rounded-xl border border-emerald-100 bg-emerald-50/50 hover:bg-emerald-100/50 transition text-center">
               <Icon name="wallet" size={20} className="text-emerald-600 mb-1.5" />
               <span className="text-xs font-semibold text-slate-800">
                 Add expense
               </span>
             </button>
-            <button className="flex flex-col items-center justify-center p-4 rounded-xl border border-blue-100 bg-blue-50/50 hover:bg-blue-100/50 transition text-center">
+            <button type="button" onClick={() => navigate("/documents")} className="flex flex-col items-center justify-center p-4 rounded-xl border border-blue-100 bg-blue-50/50 hover:bg-blue-100/50 transition text-center">
               <Icon name="upload" size={20} className="text-blue-600 mb-1.5" />
               <span className="text-xs font-semibold text-slate-800">
                 Upload document
               </span>
             </button>
-            <button className="flex flex-col items-center justify-center p-4 rounded-xl border border-amber-100 bg-amber-50/50 hover:bg-amber-100/50 transition text-center">
+            <button type="button" onClick={() => navigate("/chat")} className="flex flex-col items-center justify-center p-4 rounded-xl border border-amber-100 bg-amber-50/50 hover:bg-amber-100/50 transition text-center">
               <Icon name="chat" size={20} className="text-amber-600 mb-1.5" />
               <span className="text-xs font-semibold text-slate-800">
                 Ask in chat
@@ -727,45 +801,20 @@ export default function HomePage() {
             tone="slate"
             title="Recent activity"
             actionText="View all"
+            onAction={() => navigate("/timeline")}
           />
           <div className="mt-4 space-y-3 text-xs">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-semibold text-slate-900">
-                  Added expense - ₹2,180.00
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  KSEB Electricity Bill
-                </p>
+            {activityItems.length ? activityItems.map((item) => (
+              <div key={item.key} className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold text-slate-900">{item.title}{item.amount !== null ? ` · ${formatCurrency(item.amount)}` : ""}</p>
+                  <p className="text-[11px] text-slate-500 truncate">{item.detail}</p>
+                </div>
+                <span className="shrink-0 text-[11px] text-slate-400">{relativeDate(item.date)}</span>
               </div>
-              <span className="text-[11px] text-slate-400">2 days ago</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-semibold text-slate-900">
-                  Added commitment
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  KSEB Electricity Bill
-                </p>
-              </div>
-              <span className="text-[11px] text-slate-400">3 days ago</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-semibold text-slate-900">Uploaded document</p>
-              </div>
-              <span className="text-[11px] text-slate-400">5 days ago</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-semibold text-slate-900">Chat session</p>
-                <p className="text-[11px] text-slate-500">
-                  Discussed upcoming expenses
-                </p>
-              </div>
-              <span className="text-[11px] text-slate-400">5 days ago</span>
-            </div>
+            )) : (
+              <div className="py-8 text-center"><p className="text-sm font-medium text-slate-700">No activity yet</p><p className="mt-1 text-xs text-slate-500">Activity will appear as family records are added.</p></div>
+            )}
           </div>
         </Surface>
       </section>
@@ -773,7 +822,7 @@ export default function HomePage() {
   );
 }
 
-function pyItemRow(item: any, idx: number) {
+function pyItemRow(item: any, idx: string | number) {
   return (
     <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
       <div className="flex items-center gap-3">
@@ -791,8 +840,14 @@ function pyItemRow(item: any, idx: number) {
       </div>
       <span
         className={`px-2 py-0.5 rounded-md font-semibold text-[10px] ${
-          item.status === "Overdue"
+          item.status === "Overdue" || item.status === "Critical"
             ? "bg-rose-100 text-rose-700"
+            : item.status === "High"
+            ? "bg-orange-100 text-orange-700"
+            : item.status === "Medium"
+            ? "bg-amber-100 text-amber-700"
+            : item.status === "Low"
+            ? "bg-emerald-100 text-emerald-700"
             : item.status === "Pending"
             ? "bg-amber-100 text-amber-700"
             : "bg-blue-100 text-blue-700"
