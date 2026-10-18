@@ -11,6 +11,7 @@ import {uploadDocument , type DocumentResponse} from "../../services/api/documen
 interface ChatComposerProps {
   onSend: (message: string) => void;
   familyId: string; // Optional familyId prop
+  memberId: string | null; // Optional memberId prop
   onDocumentUpload?: (document: DocumentResponse) => void; // Optional callback for document upload
   loading?: boolean;
 }
@@ -18,6 +19,7 @@ interface ChatComposerProps {
 export default function ChatComposer({
   onSend,
   familyId,
+  memberId,
   onDocumentUpload,
   loading = false,
 }: ChatComposerProps) {
@@ -42,7 +44,7 @@ export default function ChatComposer({
   
   const handleFileUpload = async (file: File) => {
   try {
-    const document = await uploadDocument(familyId,file);
+    const document = await uploadDocument(familyId,file,memberId);
 
     onDocumentUpload?.(document);
   } catch (error) {
