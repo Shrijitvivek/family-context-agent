@@ -53,3 +53,27 @@ export const uploadDocument = async (
 
   return response.data;
 };
+
+export const confirmDocument = async (
+  documentId: string,
+  payload: {
+    family_id: string;
+    member_id?: string | null;
+    commitment_type: string;
+    title: string;
+    category?: string | null;
+    description?: string | null;
+    amount?: number | null;
+    start_date?: string | null;
+    due_date?: string | null;
+    priority?: string;
+  },
+) => {
+  const response = await apiClient.post(
+    `/documents/${documentId}/confirm`,
+    payload,
+  );
+
+  return response.data;
+};
+
