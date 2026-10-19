@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.core.constants import CommitmentStatus, CommitmentType, Priority
+from app.core.constants import CommitmentStatus, CommitmentType
 
 
 class ScenarioFamily(BaseModel):
@@ -30,7 +30,6 @@ class ScenarioCommitment(BaseModel):
     amount: Decimal | None = None
     due_in_days: int | None = None
     status: CommitmentStatus = CommitmentStatus.PENDING
-    priority: Priority = Priority.MEDIUM
 
 
 class ScenarioDependency(BaseModel):

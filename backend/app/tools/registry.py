@@ -226,7 +226,7 @@ class ToolRegistry:
                 name="update_commitment",
                 description=(
                     "Update an EXISTING family commitment. You can change "
-                    "its amount, due_date, priority, status, or reschedule it. "
+                    "its amount, due_date, status, or reschedule it. "
                     "For example, if the user says 'change the electricity "
                     "bill from 2000 to 2037', set amount to 2037. If the user "
                     "says 'by this month end', set due_date to the resolved "

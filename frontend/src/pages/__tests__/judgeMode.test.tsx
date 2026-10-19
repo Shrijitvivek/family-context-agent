@@ -51,12 +51,12 @@ describe("judge household dashboard scenario", () => {
     dashboardApi.getDocuments.mockResolvedValue([]);
   });
 
-  it("shows the selected household's current bill, medical priority, deadline, and expense", async () => {
+  it("shows the selected household's current bill, deadline, and expense", async () => {
     render(<HomePage />);
-    await waitFor(() => expect(dashboardApi.getPriorities).toHaveBeenCalledWith("nair-family"));
+    await waitFor(() => expect(dashboardApi.getUpcomingCommitments).toHaveBeenCalledWith("nair-family", null));
 
     expect(await screen.findByText("Groceries")).toBeTruthy();
-    expect(screen.getByText("CBC test")).toBeTruthy();
+    expect(screen.queryByText("CBC test")).toBeNull();
     expect(screen.getByText("KSEB Electricity Bill")).toBeTruthy();
     expect(screen.getByText("Student registration deadline")).toBeTruthy();
   });

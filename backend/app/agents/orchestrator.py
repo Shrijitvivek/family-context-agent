@@ -2,6 +2,10 @@
 """Orchestrate AI responses and family-context tool execution."""
 
 import json
+import re
+from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
+from uuid import UUID
 
 from app.agents.clarification import build_clarification
 from app.agents.prompts import SYSTEM_PROMPT
@@ -14,11 +18,6 @@ from app.utils.dates import (
     resolve_expense_date,
     today_in,
 )
-import re
-from decimal import Decimal, InvalidOperation
-from datetime import date, timedelta
-from uuid import UUID
-
 
 _CONFIRMATION_REPLIES = {
     "yes",
@@ -62,8 +61,8 @@ _COMMITMENT_ACTION_PREFIX_RE = re.compile(
 )
 _COMMITMENT_ACTION_SUFFIX_RE = re.compile(
     r"\s+(?:for|assigned to|belonging to)\s+.+$"
-    r"|\s+as\s+(?:completed|complete|done|finished|cancelled|canceled)$"
-    r"|\s+(?:completed|complete|done|finished|cancelled|canceled)$",
+    r"|\s+as\s+(?:completed|complete|done|finished|cancelled|canceled)[.!?]*$"
+    r"|\s+(?:completed|complete|done|finished|cancelled|canceled)[.!?]*$",
     re.IGNORECASE,
 )
 
@@ -303,7 +302,15 @@ def _past_due_creation_confirmation(state: AgentState) -> str | None:
         )
     except ValueError:
         return None
-    if due_date >= today_in(get_settings().family_timezone):
+    
+    current_date = state.metadata.get("today")
+    today = (
+        date.fromisoformat(current_date)
+        if current_date
+        else today_in(get_settings().family_timezone)
+    )
+
+    if due_date < today:
         return None
 
     message_without_date = re.sub(
@@ -543,7 +550,7 @@ def _format_commitment_list(
     if not records:
         lines = [
             "There are no active commitments.\n\n"
-            "| # | Title | Type | Category | Status | Due Date | ID |\n"
+            "| # | Title | Type| Category | Status | Due Date | ID |\n"
             "|---:|---|---|---|---|---|---|\n"
             "| — | None | — | — | — | — | — |",
         ]
@@ -964,7 +971,7 @@ class FamilyContextAgent:
         self.ai_client = ai_client
         self.tool_registry = tool_registry
 
-    async def run(self, state: AgentState) -> AgentState:
+    async def run(self, state: AgentState) -> AgentState: # type: ignore
         past_due_question = _past_due_creation_confirmation(state)
         if past_due_question is not None:
             state.assistant_message = past_due_question
@@ -989,7 +996,16 @@ class FamilyContextAgent:
         )
         if pending_bill and bill_details:
             amount, due_date = bill_details
-            if due_date < today_in(get_settings().family_timezone) and not re.fullmatch(
+
+            current_date = state.metadata.get("today")
+            today = (
+                date.fromisoformat(current_date)
+                if current_date
+                else today_in(get_settings().family_timezone)
+            )
+
+            if due_date < today and not re.fullmatch(
+
                 r"\s*(?:yes|yeah|yep|correct|intentional|that's right)[.!\s]*",
                 state.user_message,
                 re.I,
@@ -1277,6 +1293,13 @@ If the context is insufficient, use the appropriate tool
 or ask the user for clarification.
 """
 
+        current_date = state.metadata.get("today")
+        date_context = (
+            f"\n\nCURRENT APPLICATION DATE\n=========================\n"
+            f"Today is {current_date}. Use this date for date questions and relative dates."
+            if current_date
+            else ""
+        )
         dependency_context = ""
         if _is_dependency_request(state.user_message):
             earlier_plans = [
@@ -1306,7 +1329,12 @@ Report which commitments and dependency links were actually created.
         messages = [
             {
                 "role": "system",
-                "content": SYSTEM_PROMPT + context_section + dependency_context,
+                "content": (
+                    SYSTEM_PROMPT
+                    + context_section
+                    + date_context
+                    + dependency_context
+                ),
             },
         ]
 
@@ -1408,6 +1436,9 @@ Report which commitments and dependency links were actually created.
                         resolved_date = resolve_expense_date(
                             _expense_date_source(state),
                             get_settings().family_timezone,
+                            today=date.fromisoformat(state.metadata["today"])
+                            if state.metadata.get("today")
+                            else None,
                         )
                     except ValueError as exc:
                         state.assistant_message = str(exc)
@@ -1447,6 +1478,9 @@ Report which commitments and dependency links were actually created.
                                 resolve_commitment_due_date(
                                     date_source,
                                     get_settings().family_timezone,
+                                    today=date.fromisoformat(state.metadata["today"])
+                                    if state.metadata.get("today")
+                                    else None,
                                 )
                             )
                         except ValueError:
@@ -1455,12 +1489,15 @@ Report which commitments and dependency links were actually created.
                             # clarification layer to ask for a date.
                             arguments.pop("due_date", None)
                         else:
+                            current_date = state.metadata.get("today")
+                            today = (
+                                date.fromisoformat(current_date)
+                                if current_date
+                                else today_in(get_settings().family_timezone)
+                            )
                             if (
-                                resolved_due_date
-                                < today_in(get_settings().family_timezone)
-                                and not (
-                                    confirmation_source and confirmation_reply
-                                )
+                                resolved_due_date < today
+                                and not (confirmation_source and confirmation_reply)
                             ):
                                 title = str(
                                     arguments.get("title", "this commitment")
@@ -1529,15 +1566,45 @@ Report which commitments and dependency links were actually created.
                             if str(
                                 _get_record_field(item, "status", "")
                             ).upper().split(".")[-1]
-                            in {"PENDING", "OVERDUE"}
+                            in {"PENDING", "SCHEDULED", "IN_PROGRESS", "OVERDUE"}
+                        ]
+
+                    def _idempotent_terminal_records(records, update_arguments):
+                        requested_status = str(
+                            update_arguments.get("status", "")
+                        ).upper()
+                        if requested_status not in {"COMPLETED", "CANCELLED"}:
+                            return []
+                        return [
+                            record
+                            for record in records
+                            if str(
+                                _get_record_field(record, "status", "")
+                            ).upper().split(".")[-1]
+                            == requested_status
+                            and all(
+                                _get_record_field(record, field) == value
+                                for field, value in update_arguments.items()
+                                if field not in {"family_id", "commitment_id"}
+                            )
                         ]
 
                     pending_records = _pending_records(
                         commitment_search_records or []
                     )
+                    if not pending_records:
+                        pending_records = _idempotent_terminal_records(
+                            commitment_search_records or [], arguments
+                        )
 
                     if not pending_records:
                         search_arguments = _commitment_search_filters(state)
+                        requested_status = str(arguments.get("status", "")).upper()
+                        if requested_status in {"COMPLETED", "CANCELLED"}:
+                            # Permit a same-status request to resolve as a no-op.
+                            # Explicit status is required because ordinary searches
+                            # intentionally hide terminal commitments.
+                            search_arguments["status"] = requested_status
                         search_result = await self.tool_registry.execute(
                             "search_commitments",
                             search_arguments,
@@ -1575,6 +1642,10 @@ Report which commitments and dependency links were actually created.
                         pending_records = _pending_records(
                             commitment_search_records
                         )
+                        if not pending_records:
+                            pending_records = _idempotent_terminal_records(
+                                commitment_search_records, arguments
+                            )
 
                     if not pending_records:
                         state.assistant_message = (

@@ -9,10 +9,8 @@ import type { ReactNode } from "react";
 
 import { useFamily } from "../context/FamilyContext";
 import {
-  getPriorities,
   getUpcomingCommitments,
   type Commitment,
-  type Priority,
 } from "../services/api/dashboard";
 import {
   getExpenseSummary,
@@ -276,9 +274,15 @@ function SectionHeading({
 
 export default function HomePage() {
   const { selectedFamilyId, selectedMemberId, members } = useFamily();
+  const today = new Date();
+  const todayLabel = new Intl.DateTimeFormat("en-IN", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(today).toUpperCase();
 
   const [upcomingItems, setUpcomingItems] = useState<Commitment[]>([]);
-  const [priorities, setPriorities] = useState<Priority[]>([]);
   const [recentExpenses, setRecentExpenses] = useState<Expense[]>([]);
   const [expenseTotal, setExpenseTotal] = useState<number | null>(null);
   const [documentCount, setDocumentCount] = useState<number | null>(null);
@@ -299,7 +303,6 @@ export default function HomePage() {
 
     if (!selectedFamilyId) {
       setUpcomingItems([]);
-      setPriorities([]);
       setRecentExpenses([]);
       setExpenseTotal(null);
       setDocumentCount(null);
@@ -314,13 +317,12 @@ export default function HomePage() {
 
       try {
         const familyId = selectedFamilyId!;
-        const [commitments, summary, expenses, documents, priorityItems] =
+        const [commitments, summary, expenses, documents] =
           await Promise.all([
             getUpcomingCommitments(familyId, selectedMemberId),
             getExpenseSummary(familyId, selectedMemberId),
             getExpenses(familyId, selectedMemberId),
             getDocuments(familyId, selectedMemberId),
-            getPriorities(familyId),
           ]);
 
         if (cancelled) return;
@@ -344,7 +346,6 @@ export default function HomePage() {
         setExpenseTotal(Number(summary.total));
         setRecentExpenses(visibleExpenses.slice(0, 3));
         setDocumentCount(documents.length);
-        setPriorities(priorityItems);
       } catch (err) {
         if (cancelled) return;
         setError(
@@ -391,7 +392,7 @@ export default function HomePage() {
         <div className="flex min-h-[220px] flex-col justify-between px-6 py-6 sm:min-h-[230px] sm:px-8 lg:min-h-[245px] lg:px-10">
           <div className="flex justify-between items-start">
             <span className="text-xs font-semibold text-slate-500 tracking-wider">
-              SUNDAY, 11 OCTOBER 2026
+              {todayLabel}
             </span>
           </div>
 
@@ -489,37 +490,11 @@ export default function HomePage() {
           />
           <div className="mt-4 divide-y divide-slate-100">
             {[
-              {
-                date: "08 Oct",
-                title: "Kavya's term fee",
-                time: "All day",
-                status: "Overdue",
-                color: "bg-rose-500",
-              },
-              {
-                date: "11 Oct",
-                title: "KSEB Electricity Bill",
-                time: "All day",
-                status: "Pending",
-                color: "bg-amber-500",
-              },
-              {
-                date: "15 Oct",
-                title: "Amma's fasting blood sugar test",
-                time: "9:00 AM",
-                status: "Upcoming",
-                color: "bg-blue-500",
-              },
-              {
-                date: "18 Oct",
-                title: "Groceries restock",
-                time: "All day",
-                status: "Upcoming",
-                color: "bg-emerald-500",
-              },
-            ].map((item, idx) => (
-              pyItemRow(item, idx)
-            ))}
+              { date: "08 Oct", title: "Kavya's term fee", time: "All day", status: "Overdue", color: "bg-rose-500" },
+              { date: "11 Oct", title: "KSEB Electricity Bill", time: "All day", status: "Pending", color: "bg-amber-500" },
+              { date: "15 Oct", title: "Amma's fasting blood sugar test", time: "9:00 AM", status: "Upcoming", color: "bg-blue-500" },
+              { date: "18 Oct", title: "Groceries restock", time: "All day", status: "Upcoming", color: "bg-emerald-500" },
+            ].map((item, idx) => pyItemRow(item, idx))}
           </div>
         </Surface>
 
@@ -778,9 +753,7 @@ function pyItemRow(item: any, idx: number) {
     <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
       <div className="flex items-center gap-3">
         <div className="w-10 text-slate-400 font-medium">
-          <span className="block text-slate-900 font-semibold">
-            {item.date.split(" ")[0]}
-          </span>
+          <span className="block text-slate-900 font-semibold">{item.date.split(" ")[0]}</span>
           <span>{item.date.split(" ")[1]}</span>
         </div>
         <span className={`size-2 rounded-full ${item.color}`} />
@@ -789,15 +762,13 @@ function pyItemRow(item: any, idx: number) {
           <p className="text-[11px] text-slate-500">{item.time}</p>
         </div>
       </div>
-      <span
-        className={`px-2 py-0.5 rounded-md font-semibold text-[10px] ${
-          item.status === "Overdue"
-            ? "bg-rose-100 text-rose-700"
-            : item.status === "Pending"
-            ? "bg-amber-100 text-amber-700"
-            : "bg-blue-100 text-blue-700"
-        }`}
-      >
+      <span className={`px-2 py-0.5 rounded-md font-semibold text-[10px] ${
+        item.status === "Overdue"
+          ? "bg-rose-100 text-rose-700"
+          : item.status === "Pending"
+          ? "bg-amber-100 text-amber-700"
+          : "bg-blue-100 text-blue-700"
+      }`}>
         {item.status}
       </span>
     </div>

@@ -13,6 +13,7 @@ from app.core.exceptions import (
 from app.models.commitment import Commitment
 from app.models.commitment_dependency import CommitmentDependency
 from app.repositories.commitment import CommitmentRepository
+from app.repositories.notification import NotificationRepository
 from app.schemas.commitment import (
     CommitmentCreate,
     CommitmentDependencyCreate,
@@ -20,7 +21,7 @@ from app.schemas.commitment import (
     SearchCommitmentsQuery,
 )
 from app.services.dependency import DependencyService
-from app.services.priority import PriorityRefresher
+from app.services.priority import PriorityRefresher, priority_floor_for_status
 
 
 class CommitmentService:
@@ -74,6 +75,7 @@ class CommitmentService:
                 ]
             )
 
+        initial_priority = payload.priority or priority_floor_for_status(payload.status.value)
         commitment = Commitment(
             family_id=payload.family_id,
             member_id=payload.member_id,
@@ -85,7 +87,7 @@ class CommitmentService:
             start_date=payload.start_date,
             due_date=payload.due_date,
             status=payload.status.value,
-            priority=payload.priority.value,
+            priority=initial_priority.value if initial_priority else None,
             source_type=payload.source_type.value,
             document_id=payload.document_id,
         )
@@ -151,7 +153,17 @@ class CommitmentService:
             await self._repository.rollback()
             raise PersistenceError("update the commitment") from exc
 
-        await self._changed(payload.family_id)
+        if self._on_change is not None:
+            await self._changed(payload.family_id)
+        elif commitment.status in {"COMPLETED", "CANCELLED"}:
+            session = getattr(self._repository, "_session", None)
+            if session is not None:
+                notifications = NotificationRepository(session)
+                active = await notifications.list_active(payload.family_id)
+                for notification in active:
+                    if notification.commitment_id == commitment.id:
+                        notifications.resolve(notification)
+                await session.commit()
         return commitment
 
     async def get(

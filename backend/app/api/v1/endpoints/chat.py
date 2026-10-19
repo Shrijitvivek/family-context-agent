@@ -1,11 +1,12 @@
 """Chat and natural-language input endpoints."""
 
+from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_db
+from app.api.dependencies import get_db, get_today
 from app.schemas.chat import (
     ChatHistoryMessage,
     ChatHistoryResponse,
@@ -21,8 +22,11 @@ router = APIRouter()
 async def chat(
     request: ChatRequest,
     session: AsyncSession = Depends(get_db),
+    today: date = Depends(get_today),  # noqa: B008
 ) -> ChatResponse:
     service = ChatService(session)
+    if hasattr(service, "_today"):
+        service._today = today
 
     state = await service.process_message(
         family_id=request.family_id,

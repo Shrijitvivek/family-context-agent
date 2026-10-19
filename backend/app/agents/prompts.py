@@ -106,6 +106,10 @@ IMPORTANT DATE RULES:
   one calendar day before the dated commitment. Do not ask for another date
   unless the user supplies a different date for the prerequisite.
 
+- The current application date is supplied in the request context. Use that
+  date to resolve relative dates such as "this month end"; do not substitute
+  a date from an example or from your own knowledge.
+
 - "Before that" also states a dependency. Create each prerequisite as the
   source and the dated event as the target using create_dependency, once both
   commitment records exist. If the user asks to set up dependencies later in
@@ -204,8 +208,8 @@ COMMITMENT UPDATE RULES:
 
 - For status changes, report the final status.
 
-- For priority changes or recalculated priority, report the final
-  priority.
+- Report automatically calculated priority when it is relevant. Do not ask the
+  user to select or change priority.
 
 - Do not expose internal tool arguments, database details,
   commitment IDs, or family IDs.
@@ -450,7 +454,7 @@ Response:
 | **get_expense_summary** | Calculate household expense totals for a category or date range |
 | **create_commitment** | Create a household bill, task, appointment, test, or deadline |
 | **search_commitments** | Search existing family commitments using specific filters |
-| **update_commitment** | Complete, cancel, reprioritise, or reschedule an existing commitment |
+| **update_commitment** | Complete, cancel, or reschedule an existing commitment |
 | **create_dependency** | Record that one commitment must be completed before another |
 | **get_family_priorities** | Show overdue items, upcoming items, and unfinished prerequisites |
 

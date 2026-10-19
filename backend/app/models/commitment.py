@@ -62,9 +62,7 @@ class Commitment(Base):
     status: Mapped[str] = mapped_column(
         String(30), nullable=False, default="PENDING", server_default="PENDING"
     )
-    priority: Mapped[str] = mapped_column(
-        String(30), nullable=False, default="MEDIUM", server_default="MEDIUM"
-    )
+    priority: Mapped[str | None] = mapped_column(String(30), nullable=True)
     source: Mapped[str | None] = mapped_column(String(50), nullable=True)
     source_type = synonym("source")
     document_id: Mapped[UUID | None] = mapped_column(
