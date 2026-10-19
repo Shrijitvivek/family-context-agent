@@ -22,6 +22,7 @@ import {
   getDocuments,
   type DocumentResponse,
   uploadDocument,
+  confirmDocument,
 } from "../services/api/documents";
 
 import { useFamily } from "../context/FamilyContext";
@@ -236,11 +237,14 @@ export default function DocumentsPage() {
   const { selectedFamilyId, selectedMemberId } = useFamily();
 
   const [documents, setDocuments] = useState<DocumentResponse[]>([]);
+  const [selectedDocument, setSelectedDocument] =
+    useState<DocumentResponse | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -281,9 +285,7 @@ export default function DocumentsPage() {
     };
   }, [selectedFamilyId, selectedMemberId, retryCount]);
 
-  const handleUpload = async (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
+  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
 
     if (!file || !selectedFamilyId) {
@@ -310,6 +312,69 @@ export default function DocumentsPage() {
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
+    }
+  };
+
+  const handleConfirmSelectedDocument = async () => {
+    if (!selectedDocument || !selectedFamilyId) return;
+
+    const data = selectedDocument.extracted_data ?? {};
+    const title = data.title;
+    const commitmentType = data.commitment_type;
+
+    if (
+      typeof title !== "string" ||
+      !title.trim() ||
+      typeof commitmentType !== "string" ||
+      !commitmentType.trim()
+    ) {
+      setConfirmError("The document is missing a title or commitment type.");
+      return;
+    }
+
+    setConfirming(true);
+    setConfirmError("");
+
+    try {
+      const rawAmount = data.amount;
+      const amount =
+        typeof rawAmount === "number"
+          ? rawAmount
+          : typeof rawAmount === "string" && rawAmount.trim()
+            ? Number(rawAmount)
+            : undefined;
+
+      await confirmDocument(selectedDocument.id, {
+        family_id: selectedFamilyId,
+        member_id: selectedMemberId || undefined,
+        commitment_type: commitmentType,
+        title,
+        category: typeof data.category === "string" ? data.category : undefined,
+        description:
+          typeof data.description === "string" ? data.description : undefined,
+        amount:
+          amount !== undefined && Number.isFinite(amount) ? amount : undefined,
+        start_date:
+          typeof data.start_date === "string" ? data.start_date : undefined,
+        due_date: typeof data.due_date === "string" ? data.due_date : undefined,
+        priority: "MEDIUM",
+      });
+
+      const updatedDocuments = await getDocuments(
+        selectedFamilyId,
+        selectedMemberId,
+      );
+
+      setDocuments(updatedDocuments);
+      setSelectedDocument(null);
+    } catch (err) {
+      setConfirmError(
+        err instanceof Error
+          ? err.message
+          : "Unable to confirm this document. Please try again.",
+      );
+    } finally {
+      setConfirming(false);
     }
   };
 
@@ -345,7 +410,11 @@ export default function DocumentsPage() {
           >
             {uploading ? (
               <>
-                <RefreshCw size={14} className="animate-spin" aria-hidden="true" />
+                <RefreshCw
+                  size={14}
+                  className="animate-spin"
+                  aria-hidden="true"
+                />
                 Uploading...
               </>
             ) : (
@@ -375,7 +444,11 @@ export default function DocumentsPage() {
           <span>Supported formats: PDF, JPG, JPEG, PNG</span>
         </div>
         <div className="flex items-center gap-2">
-          <ShieldCheck size={15} className="text-emerald-600" aria-hidden="true" />
+          <ShieldCheck
+            size={15}
+            className="text-emerald-600"
+            aria-hidden="true"
+          />
           <span>Securely stored & processed</span>
         </div>
       </Surface>
@@ -426,7 +499,8 @@ export default function DocumentsPage() {
             )}
             <span className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
               <Files size={13} aria-hidden="true" />
-              {documents.length} {documents.length === 1 ? "document" : "documents"}
+              {documents.length}{" "}
+              {documents.length === 1 ? "document" : "documents"}
             </span>
           </div>
         </div>
@@ -465,21 +539,155 @@ export default function DocumentsPage() {
               No documents yet
             </h3>
             <p className="mt-1 text-xs text-slate-500 max-w-sm mx-auto">
-              Upload your first family document using the button above. Your uploaded documents will appear here.
+              Upload your first family document using the button above. Your
+              uploaded documents will appear here.
             </p>
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {documents.map((document) => (
-              <DocumentCard
+              <button
                 key={document.id}
-                filename={document.file_name}
-                status={document.processing_status ?? "UNKNOWN"}
-              />
+                type="button"
+                onClick={() => setSelectedDocument(document)}
+                className="w-full cursor-pointer rounded-2xl text-left transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-violet-500"
+                aria-label={`View details for ${document.file_name}`}
+              >
+                <DocumentCard
+                  filename={document.file_name}
+                  status={document.processing_status ?? "UNKNOWN"}
+                />
+              </button>
             ))}
           </div>
         )}
       </Surface>
+      {selectedDocument && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
+          onClick={() => setSelectedDocument(null)}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="document-details-title"
+            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2
+                  id="document-details-title"
+                  className="text-lg font-semibold text-slate-900"
+                >
+                  Document details
+                </h2>
+                <p className="mt-1 break-words text-sm text-slate-500">
+                  {selectedDocument.file_name}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedDocument(null)}
+                className="rounded-lg px-3 py-1 text-sm text-slate-500 hover:bg-slate-100"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-3 text-sm">
+              <div className="flex justify-between gap-4">
+                <span className="text-slate-500">Status</span>
+                <span className="break-words text-right font-medium text-slate-900">
+                  {(selectedDocument.processing_status ?? "UNKNOWN").replace(
+                    /_/g,
+                    " ",
+                  )}
+                </span>
+              </div>
+
+              <div className="flex justify-between gap-4">
+                <span className="text-slate-500">Document type</span>
+                <span className="break-words text-right text-slate-900">
+                  {selectedDocument.document_type || "Not available"}
+                </span>
+              </div>
+
+              <div className="flex justify-between gap-4">
+                <span className="text-slate-500">Uploaded on</span>
+                <span className="text-right text-slate-900">
+                  {selectedDocument.created_at
+                    ? new Date(selectedDocument.created_at).toLocaleDateString()
+                    : "Not available"}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-5 border-t border-slate-100 pt-4">
+              <h3 className="mb-3 text-sm font-semibold text-slate-900">
+                Extracted details
+              </h3>
+
+              {selectedDocument.extracted_data &&
+              Object.keys(selectedDocument.extracted_data).length > 0 ? (
+                <div className="max-h-64 space-y-3 overflow-y-auto">
+                  {Object.entries(selectedDocument.extracted_data).map(
+                    ([key, value]) => (
+                      <div key={key}>
+                        <p className="text-xs font-medium text-slate-500">
+                          {key
+                            .replace(/_/g, " ")
+                            .replace(/\b\w/g, (letter) => letter.toUpperCase())}
+                        </p>
+                        <p className="mt-1 break-words text-sm text-slate-800">
+                          {value === null || value === undefined
+                            ? "Not available"
+                            : typeof value === "object"
+                              ? JSON.stringify(value, null, 2)
+                              : String(value)}
+                        </p>
+                      </div>
+                    ),
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">
+                  No extracted details available for this document.
+                </p>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setSelectedDocument(null)}
+              className="mt-5 w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+            >
+              Done
+            </button>
+            {selectedDocument.processing_status === "NEEDS_CONFIRMATION" && (
+              <>
+                {confirmError && (
+                  <p role="alert" className="mt-3 text-sm text-red-600">
+                    {confirmError}
+                  </p>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleConfirmSelectedDocument}
+                  disabled={confirming}
+                  className="mt-5 w-full rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60"
+                >
+                  {confirming
+                    ? "Confirming..."
+                    : "Confirm and create commitment"}
+                </button>
+              </>
+            )}
+          </section>
+        </div>
+      )}
     </main>
   );
 }

@@ -150,6 +150,7 @@ async def test_agent_tool_validation_prevents_expense_without_required_field(
             rows = list((await session.scalars(select(Expense).where(Expense.family_id == family_id))).all())
             assert len(result.tool_calls) == 1
             assert result.tool_results[0]["result"]["success"] is False
+            assert result.assistant_message is not None
             assert "expense" in result.assistant_message.casefold()
             assert rows == []
         finally:
@@ -240,7 +241,7 @@ async def test_unsupported_request_does_not_dispatch_a_tool(monkeypatch):
                 message="Transfer ₹10,000 to my landlord's bank account.",
             )
             assert result.tool_calls == []
-            assert "does not support" in result.assistant_message
+            assert "does not support" in result.assistant_message # type: ignore
             assert await session.scalar(select(func.count(Expense.id)).where(Expense.family_id == family_id)) == 0
             assert await session.scalar(select(func.count(Commitment.id)).where(Commitment.family_id == family_id)) == 0
         finally:
@@ -265,13 +266,13 @@ async def test_duplicate_bill_attempt_is_rejected_without_creating_another_row(m
         session.add(existing)
         await session.flush()
         try:
-            result = await ChatService(session).process_message(
+            result = await ChatService(session , today=TODAY).process_message(
                 family_id=family_id, member_id=member_id, conversation_id=None,
                 message="Electricity bill ₹3,240 is due October 18.",
             )
             rows = list((await session.scalars(select(Commitment).where(Commitment.family_id == family_id))).all())
             assert result.tool_results[0]["result"]["success"] is False
-            assert "already exists" in result.assistant_message
+            assert "already exists" in result.assistant_message # type: ignore
             assert len(rows) == 1
             assert rows[0].id == existing.id
         finally:

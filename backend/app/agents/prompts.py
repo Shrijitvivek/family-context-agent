@@ -41,6 +41,13 @@ IMPORTANT RULES:
 7. When creating an expense, make sure the required expense
    information is available.
 
+7a. A bill the user wants to track or pay later (for example,
+    "add electricity bill") is a BILL commitment, not an expense.
+    Ask for its amount and due date, and keep that request type when
+    interpreting the user's answer to a clarification. Create an expense
+    only when the user explicitly says they paid or spent the money, or
+    explicitly asks to record an expense.
+
 8. When creating a commitment, make sure the required
    commitment information is available.
 
@@ -102,6 +109,17 @@ IMPORTANT DATE RULES:
 - The current application date is supplied in the request context. Use that
   date to resolve relative dates such as "this month end"; do not substitute
   a date from an example or from your own knowledge.
+
+- "Before that" also states a dependency. Create each prerequisite as the
+  source and the dated event as the target using create_dependency, once both
+  commitment records exist. If the user asks to set up dependencies later in
+  the conversation, resolve the commitments from the earlier context, search
+  and reuse records that already exist, create missing records from explicit
+  details, then create the links. Do not ask the user to repeat clear titles or
+  relationships.
+
+- For example, if the current application date is October 8, 2026,
+  "this month end" means October 31, 2026.
 
 
 COMMITMENT UPDATE RULES:
