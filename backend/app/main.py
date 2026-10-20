@@ -6,6 +6,8 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.router import api_router
 from app.core.exceptions import FamilyContextError
+from app.core.config import get_settings
+from app.core.exceptions import FamilyContextError, NotFoundError
 
 from contextlib import asynccontextmanager
 
@@ -32,9 +34,12 @@ async def family_context_error_handler(
     request: Request,
     exc: FamilyContextError,
 ) -> JSONResponse:
-    status_code = 409 if exc.code.startswith(
-        ("conflict", "duplicate", "dependency_")
-    ) else 400
+    if isinstance(exc, NotFoundError):
+        status_code = 404
+    elif exc.code.startswith(("conflict", "duplicate", "dependency_")):
+        status_code = 409
+    else:
+        status_code = 400
 
     return JSONResponse(
         status_code=status_code,
@@ -45,10 +50,9 @@ async def family_context_error_handler(
         },
     )
 
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=get_settings().cors_origin_list, # ["http://localhost:5173"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
