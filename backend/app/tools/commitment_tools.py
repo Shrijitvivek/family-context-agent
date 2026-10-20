@@ -102,8 +102,9 @@ def _today() -> date:
     return today_in(get_settings().family_timezone)
 
 
+
 class CreateCommitmentInput(CommitmentCreate):
-    """``create_commitment`` arguments: the commitment plus agent-only controls."""
+    """create_commitment arguments plus agent-only confirmation controls."""
 
     confirmed_new: bool = Field(
         default=False,
@@ -112,6 +113,15 @@ class CreateCommitmentInput(CommitmentCreate):
             "the similar commitments a previous call returned."
         ),
     )
+
+    confirmed_past_due_date: bool = Field(
+        default=False,
+        description=(
+            "Set true only after the user explicitly confirms saving a "
+            "commitment with a past due date."
+        ),
+    )
+
 
     @model_validator(mode="before")
     @classmethod
@@ -255,19 +265,48 @@ async def _reject_similar_commitments(
 
     error = DuplicateCommitmentError(candidates)
 
+    
+
     error.details["next_step"] = (
         "Ask the user whether this is the existing item. If they are correcting it, "
-        "use update_commitment on that commitment_id (amount, due_date, "
-        "or status). If it is a separate item, call create_commitment again with "
-        "confirmed_new=true."
+        "use update_commitment on that commitment_id (title, amount, due_date, "
+        "priority, or status). If it is a separate item, ask the user to confirm "
+        "that it is a new commitment. After confirmation, call create_commitment "
+        "again with confirmed_new=true. Preserve all original commitment arguments, "
+        "especially title, commitment_type, due_date, amount, priority, and "
+        "description. If the user already confirmed saving a past due date, also "
+        "preserve confirmed_past_due_date=true. Never remove or replace the original "
+        "due_date unless the user explicitly changes it."
     )
-
     raise error
+def _require_due_date(payload: CommitmentCreate) -> None:
+    if (
+        payload.due_date is None
+        and payload.commitment_type in DATE_REQUIRED_TYPES
+    ):
+        raise ToolInputValidationError(
+            f"A due date is required for {payload.commitment_type.value}."
+        )
+    
+    def _reject_past_due_date(payload: CommitmentCreate) -> None:
+        """Prevent saving a date-bound commitment with a past due date."""
 
+        if (
+        payload.commitment_type in DATE_REQUIRED_TYPES
+        and payload.due_date is not None
+        and payload.due_date < _today()
+    ):
+                        
+                    raise ToolInputValidationError(
+            f"The due date {payload.due_date.isoformat()} is in the past. "
+            "Ask the user to confirm before registering this commitment.",
+            details={
+                "tool_name": "create_commitment",
+                "confirmation_required": True,
+                "due_date": payload.due_date.isoformat(),
+            },
+        )
 
-def _require_due_date(
-    payload: CommitmentCreate,
-) -> None:
     if (
         payload.due_date is None
         and payload.commitment_type in DATE_REQUIRED_TYPES
@@ -285,6 +324,29 @@ def _require_due_date(
                 "missing_fields": ["due_date"],
             },
         )
+
+
+def _reject_past_due_date(
+    payload: CreateCommitmentInput,
+) -> None:
+    """Reject past due dates unless explicitly confirmed."""
+    if (
+        not payload.confirmed_past_due_date
+        and payload.commitment_type in DATE_REQUIRED_TYPES
+        and payload.due_date is not None
+        and payload.due_date < _today()
+    ):
+        raise ToolInputValidationError(
+            f"The due date {payload.due_date.isoformat()} is in the past. "
+            "Confirmation is required before saving.",
+            details={
+                "tool_name": "create_commitment",
+                "confirmation_required": True,
+                "due_date": payload.due_date.isoformat(),
+            },
+        )
+
+
 
 
 async def _with_document_proposal(
@@ -339,13 +401,16 @@ async def create_commitment(
             payload,
         )
 
+    # Validate chat and document commitments alike.
     _require_due_date(payload)
+    _reject_past_due_date(payload)
 
     if not payload.confirmed_new:
         await _reject_similar_commitments(
             service,
             payload,
         )
+
 
     if payload.document_id is not None and documents is not None:
         # Confirmation marks the document CONFIRMED in the same transaction.
@@ -362,12 +427,15 @@ async def create_commitment(
 
     else:
         commitment = await service.create(
-            CommitmentCreate.model_validate(
-                payload.model_dump(
-                    exclude={"confirmed_new"}
-                )
+            
+CommitmentCreate.model_validate(
+    payload.model_dump(
+        exclude={"confirmed_new", "confirmed_past_due_date"}
+    )
+)
+
             )
-        )
+        
 
         source = "chat"
 
