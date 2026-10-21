@@ -14,24 +14,31 @@ class ExpenseService:
 
     async def record_expense(self, payload: ExpenseCreate) -> Expense:
         """Persist one validated expense after checking family/member ownership."""
-
-        await self._repository.assert_scope(payload.family_id, payload.member_id)
-        expense = Expense(
-            family_id=payload.family_id,
-            member_id=payload.member_id,
-            amount=payload.amount,
-            category=payload.category,
-            merchant=payload.merchant,
-            description=payload.description,
-            expense_date=payload.expense_date,
-            source_type=payload.source_type.value,
-        )
+        
         try:
+            await self._repository.assert_scope(
+                payload.family_id, payload.member_id
+            
+            )
+            
+            expense = Expense(
+                family_id=payload.family_id,
+                member_id=payload.member_id,
+                amount=payload.amount,
+                category=payload.category,
+                merchant=payload.merchant,
+                description=payload.description,
+                expense_date=payload.expense_date,
+                source_type=payload.source_type.value,
+            )
+            
             expense = await self._repository.add(expense)
             await self._repository.commit()
+            
         except SQLAlchemyError as exc:
             await self._repository.rollback()
             raise PersistenceError("record the expense") from exc
+        
         return expense
 
     async def get_summary(self, query: ExpenseSummaryQuery) -> ExpenseSummary:

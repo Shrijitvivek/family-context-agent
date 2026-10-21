@@ -333,3 +333,8 @@ class ChatService:
                 await self._event_repository.rollback()
 
             raise
+    _conversation_repository = None
+    _conversation_repository = None
+    _conversation_repository = None
+    _document_repository = None
+    _agent = None

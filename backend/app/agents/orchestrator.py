@@ -1,4 +1,4 @@
-﻿
+
 """Orchestrate AI responses and family-context tool execution."""
 
 import json
@@ -1382,6 +1382,33 @@ Report which commitments and dependency links were actually created.
             )
 
             if not response.tool_calls:
+                failed_write_tools = {
+                    "add_expense",
+                    "create_commitment",
+                    "update_commitment",
+                    "create_dependency",
+                }
+
+                persistence_failed = any(
+                    call.get("name") in failed_write_tools
+                    and isinstance(entry.get("result"), dict)
+                    and entry["result"].get("success") is False
+                    and (
+                        not isinstance(entry["result"].get("error"), dict)
+                        or entry["result"]["error"].get("code")
+                        == "persistence_error"
+                    )
+                    for call, entry in zip(
+                        state.tool_calls, state.tool_results
+                    )
+                )
+
+                if persistence_failed:
+                    state.assistant_message = (
+                        "I couldn't confirm that the requested change "
+                        "was saved. Please try again."
+                    )
+                    return state
                 created_links = await _create_missing_prerequisite_links(
                     state, self.tool_registry
                 )

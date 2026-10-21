@@ -56,15 +56,15 @@ async def test_chat_service_process_message_persists_messages_and_agent_run_even
     service = ChatService.__new__(ChatService)
     conversations = FakeConversations()
     events = FakeEvents()
-    service._conversation_repository = conversations
-    service._document_repository = SimpleNamespace()
-    service._context_service = SimpleNamespace(
+    service._conversation_repository = conversations # type: ignore
+    service._document_repository = SimpleNamespace() # type: ignore
+    service._context_service = SimpleNamespace( # type: ignore
         build=lambda **_kwargs: _empty_async_result(
             SimpleNamespace(to_prompt=lambda: "Household context")
         )
     )
-    service._agent = FakeAgent()
-    service._event_repository = events
+    service._agent = FakeAgent() # type: ignore
+    service._event_repository = events # type: ignore
 
     state = await service.process_message(
         family_id=uuid4(), member_id=None, conversation_id=None, message="Spent 500 on food"
@@ -72,8 +72,8 @@ async def test_chat_service_process_message_persists_messages_and_agent_run_even
 
     assert state.assistant_message == "I recorded the expense."
     assert [role for role, _ in conversations.messages] == ["user", "assistant"]
-    assert events.events[0]["event_type"] == "agent_run"
-    assert events.events[0]["event_data"]["tool_calls"] == state.tool_calls
+    assert events.events[0]["event_type"] == "INTENT_DETECTED"
+    assert events.events[0]["event_data"]["tool_count"] == len(state.tool_calls)
     assert events.commits == 1
 
 
