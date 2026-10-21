@@ -114,10 +114,8 @@ async def test_agent_run_records_tool_errors_and_keeps_conversation_flow(
         },
     }
 
-    assert (
-        result.assistant_message
-        == "I need to clarify that request."
-    )
+    assert result.assistant_message == "I need to clarify that request."
+    
     assert ai.calls == 2
 
 

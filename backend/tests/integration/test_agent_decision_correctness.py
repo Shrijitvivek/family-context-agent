@@ -85,7 +85,7 @@ async def test_agent_routes_expense_and_bill_to_different_real_tools(monkeypatch
         _plain("Recorded ₹1,850 groceries."),
         _tool("create_commitment", {
             "commitment_type": "BILL", "category": "ELECTRICITY",
-            "title": "Electricity Bill", "amount": "3240", "due_date": "2026-10-18",
+            "title": "Electricity Bill", "amount": "3240", "due_date": "2026-10-28",
         }),
         _plain("Added the electricity bill."),
     ])
@@ -103,7 +103,7 @@ async def test_agent_routes_expense_and_bill_to_different_real_tools(monkeypatch
             ) == 0
             bill_result = await service.process_message(
                 family_id=family_id, member_id=member_id, conversation_id=None,
-                message="Electricity bill ₹3,240 is due October 18.",
+                message="Electricity bill ₹3,240 is due October 28.",
             )
             expenses = list((await session.scalars(select(Expense).where(Expense.family_id == family_id))).all())
             commitments = list((await session.scalars(select(Commitment).where(Commitment.family_id == family_id))).all())
@@ -117,7 +117,7 @@ async def test_agent_routes_expense_and_bill_to_different_real_tools(monkeypatch
             assert commitments[0].title == "Electricity Bill"
             assert commitments[0].commitment_type == "BILL"
             assert commitments[0].amount == Decimal("3240.00")
-            assert commitments[0].due_date == date(2026, 10, 18)
+            assert commitments[0].due_date == date(2026, 10, 28)
             assert commitments[0].member_id == member_id
             assert len(expenses) == 1
         finally:
@@ -316,3 +316,137 @@ async def test_agent_blocks_unrequested_tool_when_update_cannot_be_verified(monk
             assert existing.due_date == date(2026, 10, 20)
         finally:
             await _cleanup(session, family_id)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_ambiguous_commitment_requires_clarification(monkeypatch):
+    family_id, member_id = uuid4(), uuid4()
+    first = _bill(
+        family_id, member_id, "Electricity Bill",
+        date(2026, 10, 18),
+    )
+    second = _bill(
+        family_id, member_id, "Electricity Bill",
+        date(2026, 10, 25),
+    )
+    model = ScriptedDecisionModel([
+        _tool("search_commitments", {"title_query": "electricity bill"}),
+        _plain(
+            "I found multiple matching commitments. "
+            "Which electricity bill do you mean?"
+        ),
+    ])
+    _install_model(monkeypatch, model)
+
+    async with AsyncSessionLocal() as session:
+        await _seed_family(session, family_id, member_id)
+        session.add_all([first, second])
+        await session.flush()
+        try:
+            result = await ChatService(session, today=TODAY).process_message(
+                family_id=family_id,
+                member_id=member_id,
+                conversation_id=None,
+                message="Mark the electricity bill as completed.",
+            )
+
+            await session.refresh(first)
+            await session.refresh(second)
+
+            assert "which" in result.assistant_message.casefold() # type: ignore
+            assert first.status == CommitmentStatus.PENDING.value
+            assert second.status == CommitmentStatus.PENDING.value
+            assert all(
+                call["name"] != "update_commitment"
+                for call in result.tool_calls
+            )
+        finally:
+            await _cleanup(session, family_id)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_medical_diagnosis_request_is_handled_safely(monkeypatch):
+    family_id, member_id = uuid4(), uuid4()
+    model = ScriptedDecisionModel([
+        _plain(
+            "I can't diagnose your symptoms or recommend medication. "
+            "Please consult a qualified healthcare professional."
+        ),
+    ])
+    _install_model(monkeypatch, model)
+
+    async with AsyncSessionLocal() as session:
+        await _seed_family(session, family_id, member_id)
+        try:
+            result = await ChatService(session, today=TODAY).process_message(
+                family_id=family_id,
+                member_id=member_id,
+                conversation_id=None,
+                message="Diagnose my chest pain and tell me what medicine to take.",
+            )
+
+            response = result.assistant_message.casefold() # type: ignore
+            assert result.tool_calls == []
+            assert "diagnos" in response
+            assert (
+                "healthcare professional" in response
+                or "doctor" in response
+            )
+            assert await session.scalar(
+                select(func.count(Expense.id)).where(
+                    Expense.family_id == family_id
+                )
+            ) == 0
+            assert await session.scalar(
+                select(func.count(Commitment.id)).where(
+                    Commitment.family_id == family_id
+                )
+            ) == 0
+        finally:
+            await _cleanup(session, family_id)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_personalized_investment_advice_is_handled_safely(monkeypatch):
+    family_id, member_id = uuid4(), uuid4()
+    model = ScriptedDecisionModel([
+        _plain(
+            "I can't provide personalized investment advice or tell you "
+            "which stock to buy. Consider consulting a qualified financial "
+            "advisor who understands your circumstances."
+        ),
+    ])
+    _install_model(monkeypatch, model)
+
+    async with AsyncSessionLocal() as session:
+        await _seed_family(session, family_id, member_id)
+        try:
+            result = await ChatService(session, today=TODAY).process_message(
+                family_id=family_id,
+                member_id=member_id,
+                conversation_id=None,
+                message=(
+                    "Tell me which stock to buy with my family's savings "
+                    "for the best return."
+                ),
+            )
+
+            response = result.assistant_message.casefold() # type: ignore
+            assert result.tool_calls == []
+            assert "personalized investment advice" in response
+            assert "financial advisor" in response
+            assert await session.scalar(
+                select(func.count(Expense.id)).where(
+                    Expense.family_id == family_id
+                )
+            ) == 0
+            assert await session.scalar(
+                select(func.count(Commitment.id)).where(
+                    Commitment.family_id == family_id
+                )
+            ) == 0
+        finally:
+            await _cleanup(session, family_id)
+
+
+

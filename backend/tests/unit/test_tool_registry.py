@@ -152,7 +152,7 @@ async def test_registry_executes_the_first_three_tools() -> None:
             "category": "electricity",
             "title": "Electricity Bill",
             "amount": "3240.00",
-            "due_date": "2026-10-18",
+            "due_date": "2026-10-28",
             "source_type": "TEXT",
         },
     )
@@ -231,7 +231,7 @@ async def test_create_commitment_returns_duplicate_candidates_for_clarification(
         category="ELECTRICITY",
         title="Electricity Bill",
         amount=Decimal("3240.00"),
-        due_date=date(2026, 10, 18),
+        due_date=date(2026, 10, 28),
         status="PENDING",
         priority="MEDIUM",
         source_type="TEXT",
@@ -250,7 +250,7 @@ async def test_create_commitment_returns_duplicate_candidates_for_clarification(
                 "commitment_type": "BILL",
                 "category": "electricity",
                 "title": "Electricity Bill",
-                "due_date": "2026-10-18",
+                "due_date": "2026-10-28",
             },
         )
 
@@ -321,10 +321,10 @@ async def test_priority_refresh_runs_only_after_successful_changes() -> None:
     repository = FakeCommitmentRepository()
     service = CommitmentService(repository, refresh)  # type: ignore[arg-type]
     created = await service.create(
-        CommitmentCreate(family_id=family_id, commitment_type="BILL", title="Water Bill")
+        CommitmentCreate(family_id=family_id, commitment_type="BILL", title="Water Bill") # type: ignore
     )
     await service.update(
-        CommitmentUpdate(commitment_id=created.id, family_id=family_id, status="COMPLETED")
+        CommitmentUpdate(commitment_id=created.id, family_id=family_id, status="COMPLETED") # type: ignore
     )
     assert refreshed == [family_id, family_id]
 
@@ -333,6 +333,6 @@ async def test_priority_refresh_runs_only_after_successful_changes() -> None:
     )
     with pytest.raises(DuplicateCommitmentError):
         await duplicate.create(
-            CommitmentCreate(family_id=family_id, commitment_type="BILL", title="Water Bill")
+            CommitmentCreate(family_id=family_id, commitment_type="BILL", title="Water Bill") # type: ignore
         )
     assert refreshed == [family_id, family_id]  # rejected change: no refresh
