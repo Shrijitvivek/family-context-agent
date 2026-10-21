@@ -1,11 +1,11 @@
+
 services:
   db:
     image: postgres:16
-    container_name: family-context-db
     environment:
       POSTGRES_DB: family_context_agent
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
       - "5433:5432"
     volumes:
@@ -18,19 +18,51 @@ services:
 
   backend:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
-    container_name: family-context-backend
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/family_context_agent
-      NEBIUS_API_KEY: ${NEBIUS_API_KEY}
-      NEBIUS_BASE_URL: ${NEBIUS_BASE_URL}
-      NVIDIA_MODEL_NAME: ${NVIDIA_MODEL_NAME}
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/family_context_agent
+      NEBIUS_API_KEY: ${NEBIUS_API_KEY:?Set NEBIUS_API_KEY in .env}
+      NEBIUS_BASE_URL: ${NEBIUS_BASE_URL:-https://api.studio.nebius.ai/v1/}
+      NVIDIA_MODEL_NAME: ${NVIDIA_MODEL_NAME:?Set NVIDIA_MODEL_NAME in .env}
+      UPLOAD_DIR: /app/storage/uploads
     ports:
       - "8000:8000"
+    volumes:
+      - documents_data:/app/storage/uploads
+
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     depends_on:
       db:
         condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: /api/v1
+    ports:
+      - "5173:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   postgres_data:
+  documents_data:
