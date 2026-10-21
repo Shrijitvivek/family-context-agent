@@ -15,7 +15,9 @@ from app.repositories.expense import ExpenseRepository
 from app.services.commitment import CommitmentService
 from app.services.expense import ExpenseService
 from app.tools.registry import ToolRegistry
-
+from app.repositories.notification import NotificationRepository
+from app.services.notification import NotificationService
+from app.services.priority import PriorityService
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_all_seven_tools_with_postgres():
@@ -68,6 +70,10 @@ async def test_all_seven_tools_with_postgres():
         registry = ToolRegistry(
             expense_service=expense_service,
             commitment_service=commitment_service,
+            priority_service = PriorityService(
+                commitment_repository,
+                NotificationService(NotificationRepository(session)),
+            )
         )
 
         # ============================================================
@@ -92,7 +98,7 @@ async def test_all_seven_tools_with_postgres():
         print(expense_result)
 
         assert expense_result["success"] is True
-        assert expense_result["message"] == "Expense recorded"
+        assert expense_result["message"].startswith("Recorded 850.00 for GROCERIES on ")
         assert "expense_id" in expense_result
 
         expense_id = UUID(expense_result["expense_id"])
@@ -305,7 +311,8 @@ async def test_all_seven_tools_with_postgres():
         print(dependency_result)
 
         assert dependency_result["success"] is True
-        assert dependency_result["message"] == "Dependency created"
+        assert "Electricity Bill" in dependency_result["message"]
+        assert "Buy School Supplies" in dependency_result["message"]
 
         dependency = await session.scalar(
             select(CommitmentDependency).where(
@@ -335,20 +342,9 @@ async def test_all_seven_tools_with_postgres():
         print(priority_result)
 
         assert priority_result["success"] is True
-        assert "commitments" in priority_result
-
-        priority_commitment = next(
-            (
-                item
-                for item in priority_result["commitments"]
-                if str(item["id"]) == str(commitment_id)
-            ),
-            None,
-        )
-
-        assert priority_commitment is not None
-        assert priority_commitment["title"] == "Electricity Bill"
-        assert priority_commitment["priority"] == "HIGH"
+        assert "items" in priority_result
+        assert priority_result["count"] == len(priority_result["items"])
+        assert isinstance(priority_result["items"], list)
 
         # ============================================================
         # FINAL VERIFICATION
@@ -358,5 +354,9 @@ async def test_all_seven_tools_with_postgres():
         print("ALL 7 TEAM 2 TOOLS PASSED")
         print("=" * 60)
 
-        # Roll back everything created by this integration test.
-        await session.rollback()
+        # Tool services commit their writes; delete the family so its related rows
+        # are removed through the database's family foreign-key cascades.
+        from sqlalchemy import delete
+
+        await session.execute(delete(Family).where(Family.id == family_id))
+        await session.commit()

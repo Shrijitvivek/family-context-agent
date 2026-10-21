@@ -16,7 +16,21 @@ from app.schemas.document import DocumentConfirm, DocumentRead
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 
-@router.post("", response_model=DocumentRead, status_code=status.HTTP_201_CREATED)
+# Upload a new document. Then process it. 
+@router.post(
+    "/upload",
+    response_model=DocumentRead,
+    status_code=status.HTTP_201_CREATED,
+)
+
+# This endpoint is used by the web app to upload documents.
+#  It is not included in the OpenAPI schema because it is not intended for public use.
+@router.post(
+    "",
+    response_model=DocumentRead,
+    status_code=status.HTTP_201_CREATED,
+    include_in_schema=False,
+)
 async def upload_document(
     service: DocumentServiceDep,
     today: TodayDep,
@@ -36,11 +50,17 @@ async def upload_document(
     )
     return await service.process(family_id, document.id, today)
 
+
+# List documents for a family, optionally filtered by member.
 @router.get("", response_model=list[DocumentRead])
 async def list_documents(
     family_id: UUID,
     service: DocumentServiceDep,
+    member_id: UUID | None = None,
 ):
+    if member_id is not None:
+        return await service.list_by_member(family_id, member_id)
+
     return await service.list_by_family(family_id)
 
 

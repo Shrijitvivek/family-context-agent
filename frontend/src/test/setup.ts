@@ -1,3 +1,4 @@
-/**
- * TODO: Configure the frontend test environment and DOM matchers.
- */
+import { cleanup } from "@testing-library/react";
+import { afterEach } from "vitest";
+
+afterEach(cleanup);

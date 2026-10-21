@@ -12,12 +12,12 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.models.commitment import Commitment
     from app.models.family import Family
+    from app.models.family_member import FamilyMember
 
 
 class Document(Base):
     __tablename__ = "documents"
     __table_args__ = (
-        Index("ix_documents_family_id", "family_id"),
         Index("ix_documents_document_type", "document_type"),
     )
 
@@ -49,3 +49,7 @@ class Document(Base):
 
     family: Mapped["Family"] = relationship(back_populates="documents")
     commitments: Mapped[list["Commitment"]] = relationship(back_populates="document")
+    uploaded_by_member: Mapped["FamilyMember | None"] = relationship(
+        back_populates="uploaded_documents",
+        foreign_keys=[uploaded_by_member_id],
+    )

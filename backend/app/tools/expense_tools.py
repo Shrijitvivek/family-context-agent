@@ -29,9 +29,10 @@ async def add_expense(
 ) -> AddExpenseResult:
     """Record a fully specified household expense.
 
-    The agent must obtain amount, category, and expense date before invoking this
-    state-changing tool. Pydantic validation and service-level scope checks protect
-    the database even when the tool is called outside the normal chat flow.
+    The agent must obtain amount and category before invoking this state-changing
+    tool. The chat backend supplies today's date in the family's configured timezone
+    when the user does not specify a date. Pydantic validation and service-level
+    scope checks protect the database even when called outside the normal chat flow.
     """
 
     expense = await service.record_expense(payload)

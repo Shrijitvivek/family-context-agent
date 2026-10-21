@@ -1,12 +1,13 @@
-export type CommitmentStatus = "pending" | "completed" | "overdue" | "cancelled";
-export type CommitmentPriority = "low" | "medium" | "high" | "urgent";
+export type CommitmentStatus = "pending" | "scheduled" | "in_progress" | "completed" | "overdue" | "cancelled";
+export type CommitmentPriority = "low" | "medium" | "high" | "critical";
 
 export interface Commitment {
 	id: string;
 	title: string;
 	dueDate: string;
 	status: CommitmentStatus;
-	priority: CommitmentPriority;
+	priority: CommitmentPriority | null;
+	memberId?: string | null;
 	familyMember?: string | null;
 	category?: string | null;
 	description?: string | null;

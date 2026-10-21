@@ -19,7 +19,7 @@ from app.models.family import Family
 from app.models.family_member import FamilyMember
 from app.repositories.family import FamilyRepository
 from app.schemas.demo import DemoLoadResult, Scenario, ScenarioSummary
-from app.services.priority import PriorityService
+from app.services.priority import PriorityService, priority_floor_for_status
 
 _DEMO_NAMESPACE = uuid5(NAMESPACE_URL, "family-context-agent/demo")
 
@@ -104,10 +104,11 @@ class DemoService:
                 if c.due_in_days is not None
                 else None,
                 status=c.status.value,
-                priority=c.priority.value,
+                priority=(status_priority.value if status_priority else None),
                 source_type="MANUAL",
             )
             for c in scenario.commitments
+            for status_priority in [priority_floor_for_status(c.status.value)]
         }
         try:
             dependencies = [

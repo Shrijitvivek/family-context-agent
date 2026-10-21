@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     nebius_api_key: str = ""
     nebius_base_url: str = "https://api.studio.nebius.ai/v1/"
     nvidia_model_name: str = ""
+    vision_model_name: str = "Qwen/Qwen2.5-VL-72B-Instruct"
     model_timeout_seconds: float = 60.0
 
     upload_dir: str = "storage/uploads"
@@ -36,7 +37,7 @@ class Settings(BaseSettings):
     allowed_upload_types: str = "application/pdf,image/jpeg,image/png"
 
     scheduler_enabled: bool = True
-    deadline_check_interval_minutes: int = 15
+    deadline_check_interval_minutes: int = 60
 
     @property
     def cors_origin_list(self) -> list[str]:

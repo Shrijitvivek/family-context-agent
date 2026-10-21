@@ -1,60 +1,62 @@
 {
   "id": "nair_family_core",
-  "title": "Nair Family: a busy fortnight",
-  "description": "Bills, Amma's medical tests, school deadlines, and two prerequisite chains. Dates are relative to the day the scenario is loaded.",
-  "family": { "name": "Nair Family", "timezone": "Asia/Kolkata" },
+  "title": "Eva Family: a busy household",
+  "description": "A fictional household balancing bills, healthcare, education, home care, and everyday spending. Dates are relative to the day the scenario is loaded.",
+  "family": { "name": "Eva Family", "timezone": "Asia/Kolkata" },
   "members": [
-    { "key": "anil", "name": "Anil Nair", "relationship_type": "FATHER", "display_role": "Parent" },
-    { "key": "meera", "name": "Meera Nair", "relationship_type": "MOTHER", "display_role": "Parent" },
-    { "key": "kavya", "name": "Kavya", "relationship_type": "DAUGHTER", "display_role": "Student" },
-    { "key": "arjun", "name": "Arjun", "relationship_type": "SON", "display_role": "Student" },
-    { "key": "amma", "name": "Amma (Saraswathi Nair)", "relationship_type": "GRANDMOTHER", "display_role": "Grandparent" }
+    { "key": "eva", "name": "Eva Morgan", "relationship_type": "PARENT", "display_role": "Parent" },
+    { "key": "daniel", "name": "Daniel Morgan", "relationship_type": "PARENT", "display_role": "Parent" },
+    { "key": "mia", "name": "Mia Morgan", "relationship_type": "CHILD", "display_role": "Student" },
+    { "key": "noah", "name": "Noah Morgan", "relationship_type": "CHILD", "display_role": "Student" },
+    { "key": "grace", "name": "Grace Morgan", "relationship_type": "GRANDPARENT", "display_role": "Older family member" }
   ],
   "commitments": [
     {
       "key": "electricity", "member": null, "commitment_type": "BILL", "category": "ELECTRICITY",
-      "title": "KSEB Electricity Bill", "amount": "3240.00", "due_in_days": 2
+      "title": "Household electricity bill", "description": "Pay the monthly electricity bill.", "amount": "3240.00", "due_in_days": 2, "priority": "HIGH"
     },
     {
-      "key": "school_fee", "member": "kavya", "commitment_type": "EDUCATION", "category": "SCHOOL_FEES",
-      "title": "Kavya's term fee", "amount": "18500.00", "due_in_days": -1, "priority": "HIGH"
+      "key": "internet", "member": "daniel", "commitment_type": "BILL", "category": "UTILITIES",
+      "title": "Home internet bill", "description": "Monthly home internet service payment.", "amount": "1299.00", "due_in_days": 8
     },
     {
-      "key": "fasting_test", "member": "amma", "commitment_type": "LAB_TEST", "category": "MEDICAL",
-      "title": "Amma's fasting blood sugar test", "due_in_days": 3,
-      "description": "Fasting from 10 pm the night before."
+      "key": "medical_test", "member": "grace", "commitment_type": "LAB_TEST", "category": "MEDICAL",
+      "title": "Routine blood test", "description": "Complete the scheduled blood test and keep the report for the follow-up.", "due_in_days": 1, "priority": "HIGH"
     },
     {
-      "key": "cardiology", "member": "amma", "commitment_type": "APPOINTMENT", "category": "MEDICAL",
-      "title": "Amma's cardiology follow-up", "due_in_days": 5, "priority": "HIGH",
-      "description": "Bring the blood sugar report."
+      "key": "doctor_followup", "member": "grace", "commitment_type": "APPOINTMENT", "category": "MEDICAL",
+      "title": "Doctor follow-up appointment", "description": "Bring the blood test report to the appointment.", "due_in_days": 5, "priority": "HIGH"
     },
     {
-      "key": "passport_photos", "member": "arjun", "commitment_type": "TASK", "category": "EDUCATION",
-      "title": "Passport photos for Arjun's exam form", "due_in_days": null
+      "key": "school_fee", "member": "mia", "commitment_type": "EDUCATION", "category": "SCHOOL_FEES",
+      "title": "Mia's term fee", "description": "Pay the upcoming school term fee.", "amount": "18500.00", "due_in_days": 3, "priority": "HIGH"
     },
     {
-      "key": "exam_form", "member": "arjun", "commitment_type": "DEADLINE", "category": "EDUCATION",
-      "title": "Arjun's board exam registration", "due_in_days": 6
+      "key": "assignment", "member": "noah", "commitment_type": "TASK", "category": "EDUCATION",
+      "title": "Submit science assignment", "description": "Finish and submit the science assignment before the exam registration deadline.", "due_in_days": 4
     },
     {
-      "key": "water_tank", "member": "anil", "commitment_type": "HOME_TASK", "category": "HOME",
-      "title": "Clean the overhead water tank", "due_in_days": 10, "priority": "LOW"
+      "key": "exam_registration", "member": "noah", "commitment_type": "DEADLINE", "category": "EDUCATION",
+      "title": "Science exam registration deadline", "description": "Complete exam registration after submitting the required assignment.", "due_in_days": 7, "priority": "HIGH"
     },
     {
-      "key": "car_insurance", "member": "anil", "commitment_type": "RENEWAL", "category": "INSURANCE",
-      "title": "Car insurance renewal", "amount": "14200.00", "due_in_days": 21
+      "key": "home_maintenance", "member": "eva", "commitment_type": "HOME_TASK", "category": "HOME",
+      "title": "Service the kitchen water filter", "description": "Arrange routine maintenance for the household water filter.", "due_in_days": 10, "priority": "LOW"
+    },
+    {
+      "key": "insurance_renewal", "member": "daniel", "commitment_type": "RENEWAL", "category": "INSURANCE",
+      "title": "Family health insurance renewal", "description": "Review and renew the household health insurance policy.", "amount": "14200.00", "due_in_days": 21
     }
   ],
   "dependencies": [
-    { "source": "fasting_test", "target": "cardiology" },
-    { "source": "passport_photos", "target": "exam_form" }
+    { "source": "medical_test", "target": "doctor_followup" },
+    { "source": "assignment", "target": "exam_registration" }
   ],
   "expenses": [
-    { "member": "meera", "amount": "1850.00", "category": "GROCERIES", "merchant": "Lulu Hypermarket", "days_ago": 2 },
-    { "member": "anil", "amount": "2400.00", "category": "FUEL", "merchant": "Indian Oil", "days_ago": 4 },
-    { "member": "amma", "amount": "960.00", "category": "MEDICAL", "merchant": "Aster Pharmacy", "days_ago": 6 },
-    { "member": "meera", "amount": "1200.00", "category": "GROCERIES", "merchant": "Supplyco", "days_ago": 9 },
-    { "member": "kavya", "amount": "650.00", "category": "EDUCATION", "merchant": "DC Books", "days_ago": 12 }
+    { "member": "eva", "amount": "1850.00", "category": "GROCERIES", "merchant": "Green Basket Market", "description": "Weekly household groceries", "days_ago": 2 },
+    { "member": "daniel", "amount": "2400.00", "category": "FUEL", "merchant": "City Fuel Station", "description": "Household transport fuel", "days_ago": 4 },
+    { "member": "grace", "amount": "960.00", "category": "MEDICAL", "merchant": "Central Pharmacy", "description": "Prescription and basic medical supplies", "days_ago": 6 },
+    { "member": "eva", "amount": "1200.00", "category": "HOUSEHOLD", "merchant": "Home Essentials", "description": "Household cleaning supplies", "days_ago": 9 },
+    { "member": "mia", "amount": "650.00", "category": "EDUCATION", "merchant": "Campus Bookshop", "description": "School notebooks and supplies", "days_ago": 12 }
   ]
 }

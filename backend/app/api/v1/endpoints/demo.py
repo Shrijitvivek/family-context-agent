@@ -1,6 +1,7 @@
+
 """Judge-mode scenario endpoints. Only ever touch the scenario's own demo household."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.api.dependencies import DemoServiceDep, TodayDep
 from app.schemas.demo import DemoLoadResult, ScenarioSummary
@@ -13,6 +14,19 @@ async def list_scenarios(service: DemoServiceDep):
     return service.list_scenarios()
 
 
-@router.post("/scenarios/{scenario_id}/load", response_model=DemoLoadResult)
-async def load_scenario(scenario_id: str, service: DemoServiceDep, today: TodayDep):
+@router.post("/reset", response_model=DemoLoadResult)
+async def reset_demo(service: DemoServiceDep, today: TodayDep):
+    """Reset the Nair Family demo household to its original scenario data."""
+    return await service.load("nair-family", today)
+
+
+@router.post(
+    "/scenarios/{scenario_id}/load",
+    response_model=DemoLoadResult,
+)
+async def load_scenario(
+    scenario_id: str,
+    service: DemoServiceDep,
+    today: TodayDep,
+):
     return await service.load(scenario_id, today)

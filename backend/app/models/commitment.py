@@ -33,8 +33,6 @@ class Commitment(Base):
     __tablename__ = "commitments"
     __table_args__ = (
         CheckConstraint("amount IS NULL OR amount > 0", name="ck_commitments_amount_positive"),
-        Index("ix_commitments_family_id", "family_id"),
-        Index("ix_commitments_member_id", "member_id"),
         Index("ix_commitments_status", "status"),
         Index("ix_commitments_due_date", "due_date"),
         Index("ix_commitments_priority", "priority"),
@@ -64,9 +62,7 @@ class Commitment(Base):
     status: Mapped[str] = mapped_column(
         String(30), nullable=False, default="PENDING", server_default="PENDING"
     )
-    priority: Mapped[str] = mapped_column(
-        String(30), nullable=False, default="MEDIUM", server_default="MEDIUM"
-    )
+    priority: Mapped[str | None] = mapped_column(String(30), nullable=True)
     source: Mapped[str | None] = mapped_column(String(50), nullable=True)
     source_type = synonym("source")
     document_id: Mapped[UUID | None] = mapped_column(

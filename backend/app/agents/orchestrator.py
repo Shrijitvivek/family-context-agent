@@ -1,13 +1,23 @@
-﻿import json
-from typing import Any
 
+"""Orchestrate AI responses and family-context tool execution."""
+
+import json
+import re
+from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
+from uuid import UUID
+
+from app.agents.clarification import build_clarification
 from app.agents.prompts import SYSTEM_PROMPT
 from app.agents.state import AgentState
 from app.clients.ai_model import AIModelClient
 from app.core.config import get_settings
 from app.tools.registry import ToolRegistry
-from app.utils.dates import resolve_expense_date
-
+from app.utils.dates import (
+    resolve_commitment_due_date,
+    resolve_expense_date,
+    today_in,
+)
 
 _CONFIRMATION_REPLIES = {
     "yes",
@@ -15,6 +25,12 @@ _CONFIRMATION_REPLIES = {
     "yeah",
     "yep",
     "correct",
+    "that's correct",
+    "yes that's correct",
+    "yes, that's correct",
+    "yes it is correct",
+    "yes it's correct",
+    "that date is correct",
     "that's right",
     "that is right",
     "right",
@@ -23,27 +39,742 @@ _CONFIRMATION_REPLIES = {
     "okay",
 }
 
+_DATE_REQUIRED_COMMITMENT_TYPES = {
+    "BILL",
+    "APPOINTMENT",
+    "LAB_TEST",
+    "DEADLINE",
+    "RENEWAL",
+}
 
-def _expense_date_source(state: AgentState) -> str:
-    """Preserve date intent through a pending expense clarification exchange."""
+_TITLE_MATCH_STOP_WORDS = {
+    "a", "an", "and", "as", "at", "before", "complete", "completed",
+    "do", "done", "for", "from", "i", "it", "mark", "my", "of", "on",
+    "please", "set", "the", "to", "update", "with",
+}
+
+_COMMITMENT_ACTION_PREFIX_RE = re.compile(
+    r"^\s*(?:(?:please|can you|could you)\s+)?"
+    r"(?:mark|set|complete|finish|update|change|reschedule|cancel)\s+"
+    r"(?:(?:the|a|an)\s+)?",
+    re.IGNORECASE,
+)
+_COMMITMENT_ACTION_SUFFIX_RE = re.compile(
+    r"\s+(?:for|assigned to|belonging to)\s+.+$"
+    r"|\s+as\s+(?:completed|complete|done|finished|cancelled|canceled)[.!?]*$"
+    r"|\s+(?:completed|complete|done|finished|cancelled|canceled)[.!?]*$",
+    re.IGNORECASE,
+)
+
+
+def _commitment_search_filters(state: AgentState) -> dict[str, str]:
+    """Build a best-effort title/member filter from the user's request."""
+    title_query = _COMMITMENT_ACTION_PREFIX_RE.sub("", state.user_message, count=1)
+    title_query = _COMMITMENT_ACTION_SUFFIX_RE.sub("", title_query, count=1)
+    title_query = title_query.strip(" \t\r\n.,!?'“”\"")
+
+    # OVERDUE commitments are still editable and can be completed.
+    # Omitting status lets the tool return active records, including PENDING
+    # and OVERDUE, while its ordinary search excludes terminal statuses.
+    filters = {"family_id": str(state.family_id)}
+    if title_query:
+        filters["title_query"] = title_query
+
+    # Household context includes authoritative member names and UUIDs as:
+    # - Rahul (PARENT) id=<uuid>. Never substitute the speaking member's ID.
+    requested_member = re.search(
+        r"\b(?:for|assigned to|belonging to)\s+([\w'-]+)",
+        state.user_message,
+        re.IGNORECASE,
+    )
+    if requested_member:
+        for name, member_id in re.findall(
+            r"(?im)^\s*-\s*([^\r\n(]+?)\s*\([^\r\n)]*\)\s*id="
+            r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\s*$",
+            state.household_context or "",
+        ):
+            if name.strip().casefold() == requested_member.group(1).casefold():
+                try:
+                    filters["member_id"] = str(UUID(member_id))
+                except ValueError:
+                    pass
+                break
+
+    return filters
+
+
+def _requests_all_overdue_completion(message: str) -> bool:
+    normalized = message.casefold()
+    return bool(
+        re.search(r"\b(?:all|every)\b", normalized)
+        and re.search(r"\boverdue\b", normalized)
+        and re.search(r"\b(?:complete|completed|done|finish|finished)\b", normalized)
+    )
+
+
+def _named_bill_completion_targets(
+    message: str, history: list[dict] | None = None
+) -> list[str]:
+    """Extract explicitly named bill titles from a multi-item paid request."""
+    if not re.search(
+        r"\b(?:paid|pay|completed|complete|done|finished)\b", message, re.I
+    ):
+        if re.search(r"\b(?:both|all)\s+(?:the\s+)?bills\b", message, re.I):
+            for item in reversed(history or []):
+                if item.get("role") != "assistant":
+                    continue
+                prior = str(item.get("content") or "")
+                if not re.search(r"\b(?:paid|completed|which bills)\b", prior, re.I):
+                    continue
+                listed = re.findall(r"(?m)^\s*[-*]\s*(.+?bill)\s*$", prior, re.I)
+                if len(listed) > 1:
+                    return [title.strip() for title in listed]
+        return []
+    targets: list[str] = []
+    # Split list connectors first so words such as "and" cannot be mistaken
+    # for part of the following title (for example, "and water bill").
+    for segment in re.split(r"\s+(?:and|&)\s+|,", message, flags=re.I):
+        match = re.search(
+            r"\b([a-z][a-z0-9'’-]*(?:\s+[a-z][a-z0-9'’-]*){0,2}?\s+bill)\b",
+            segment,
+            re.I,
+        )
+        if match:
+            targets.append(match.group(1).strip())
+        elif re.search(r"\b(?:bill|bills)\b", message, re.I):
+            # In "Electricity and Water Bill", the final noun applies to both.
+            words = re.findall(r"[a-z][a-z0-9'’-]*", segment, re.I)
+            if words and words[-1].casefold() not in {"paid", "pay", "completed", "complete", "done", "finished"}:
+                targets.append(" ".join(words) + " Bill")
+    # This path is specifically for an explicit list, not ordinary one-item updates.
+    return targets if len(targets) > 1 else []
+
+
+def _pending_bill_request(state: AgentState) -> str | None:
+    """Find an unresolved bill creation request immediately before this reply."""
+    history = list(state.history)
+    if history and history[-1].get("role") == "user" and history[-1].get(
+        "content", ""
+    ).strip() == state.user_message.strip():
+        history.pop()
+    assistant_index = next(
+        (
+            i
+            for i in range(len(history) - 1, -1, -1)
+            if history[i].get("role") == "assistant"
+        ),
+        None,
+    )
+    if assistant_index is None:
+        return None
+    assistant = history[assistant_index]
+    question = str(assistant.get("content") or "").casefold()
+    if "in the past" in question and any(
+        word in question for word in ("intentional", "corrected date")
+    ):
+        assistant_index = next(
+            (
+                i
+                for i in range(assistant_index - 1, -1, -1)
+                if history[i].get("role") == "assistant"
+                and "bill" in str(history[i].get("content") or "").casefold()
+            ),
+            None,
+        )
+        if assistant_index is None:
+            return None
+        assistant = history[assistant_index]
+        question = str(assistant.get("content") or "").casefold()
+    if "bill" not in question or not any(
+        term in question for term in ("amount", "due date", "when is")
+    ):
+        return None
+    previous_assistant_index = max(
+        (i for i, item in enumerate(history) if item.get("role") == "assistant"),
+        default=-1,
+    )
+    for item in reversed(history[:previous_assistant_index]):
+        if item.get("role") != "user":
+            continue
+        request = str(item.get("content") or "")
+        if re.search(r"\b(?:add|create|record|track|save)\b", request, re.I) and re.search(
+            r"\bbill\b", request, re.I
+        ):
+            return request
+    return None
+
+
+def _bill_details_from_reply(message: str) -> tuple[Decimal, date] | None:
+    try:
+        due_date = resolve_commitment_due_date(
+            message, get_settings().family_timezone
+        )
+    except ValueError:
+        return None
+    date_text = re.search(
+        r"\b(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b",
+        message,
+    )
+    amount_text = message
+    if date_text:
+        amount_text = message[:date_text.start()] + " " + message[date_text.end():]
+    amount_match = re.search(r"(?<![\w.])\d[\d,]*(?:\.\d{1,2})?(?![\w.])", amount_text)
+    if not amount_match:
+        return None
+    try:
+        amount = Decimal(amount_match.group(0).replace(",", ""))
+    except InvalidOperation:
+        return None
+    if amount <= 0:
+        return None
+    return amount, due_date
+
+
+def _named_multi_completion_targets(message: str) -> list[str]:
+    """Extract multiple explicitly named commitment titles from a completion request."""
+    if not re.search(
+        r"\b(?:mark|set|complete|finish|paid|pay)\b", message, re.I
+    ) or not re.search(
+        r"\b(?:completed|complete|done|finished|paid)\b", message, re.I
+    ):
+        return []
+
+    body = re.sub(
+        r"^\s*(?:(?:please|can you|could you)\s+)?"
+        r"(?:mark|set|complete|finish)\s+(?:(?:the|these|those)\s+)?",
+        "",
+        message,
+        count=1,
+        flags=re.I,
+    )
+    body = re.sub(
+        r"\s+(?:as\s+)?(?:completed|complete|done|finished|paid)\s*[.!?]*\s*$",
+        "",
+        body,
+        flags=re.I,
+    )
+    targets = [
+        part.strip(" \t\r\n.,!?'“”\"")
+        for part in re.split(r"\s+(?:and|&)\s+|,", body, flags=re.I)
+    ]
+    targets = [
+        re.sub(r"^(?:the|these|those|my)\s+", "", target, flags=re.I)
+        for target in targets
+        if target
+    ]
+    if len(targets) < 2 or any(
+        re.search(r"\b(?:all|every|overdue)\b", target, re.I)
+        for target in targets
+    ):
+        return []
+    return targets
+
+
+def _is_dependency_request(message: str) -> bool:
+    return bool(
+        re.search(r"\bdependenc(?:y|ies)\b", message, re.I)
+        and re.search(
+            r"\b(?:set|create|add|link|record|connect|make|show)\b",
+            message,
+            re.I,
+        )
+    )
+
+
+def _past_due_creation_confirmation(state: AgentState) -> str | None:
+    """Ask once before adding a new commitment with a past due date."""
+    if _past_due_confirmation_source(state) is not None:
+        return None
+    message = state.user_message
+    if not re.search(r"\b(?:create|add|record|save|track|log)\b", message, re.I):
+        return None
+    if not re.search(
+        r"\b(?:bill|commitment|appointment|test|deadline|renewal)\b",
+        message,
+        re.I,
+    ):
+        return None
+
+    try:
+        due_date = resolve_commitment_due_date(
+            message,
+            get_settings().family_timezone,
+        )
+    except ValueError:
+        return None
+    
+    current_date = state.metadata.get("today")
+    today = (
+        date.fromisoformat(current_date)
+        if current_date
+        else today_in(get_settings().family_timezone)
+    )
+
+    if due_date < today:
+        return None
+
+    message_without_date = re.sub(
+        r"\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{4})\b",
+        " ",
+        message,
+    )
+    amount_tokens = re.findall(
+        r"(?<![\w.])\d[\d,]*(?:\.\d{1,2})?(?![\w.])",
+        message_without_date,
+    )
+    amount_missing = len(amount_tokens) == 0
+
+    question = (
+        f"The due date you gave, {due_date.isoformat()}, is in the past. "
+        "Is that date intentional?"
+    )
+    if amount_missing:
+        question += (
+            " Please reply with the amount and confirmation together "
+            "(for example, ‘336, yes, the date is correct’). If the date was "
+            "a mistake, send the corrected date and amount."
+        )
+    else:
+        question += (
+            " Reply yes to save it as overdue, or send a corrected due date."
+        )
+    return question
+
+
+def _requests_to_show(message: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(?:show|list|display|see)\b|\bwhat are they\b|\bwhich ones\b",
+            message,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _requests_commitment_list(state: AgentState) -> bool:
+    if not _requests_to_show(state.user_message):
+        return False
+
+    explicitly_requests_general_list = bool(
+        re.search(
+            r"\b(?:show|list|display|see)\s+"
+            r"(?:(?:me|my|all|active|current|the)\s+)*"
+            r"(?:commitments?|tasks?|bills?|appointments?)\b",
+            state.user_message,
+            re.IGNORECASE,
+        )
+    )
+    is_pronominal_followup = bool(
+        re.fullmatch(
+            r"\s*(?:please\s+)?(?:show|list|display|see)\s+"
+            r"(?:it|them|those|that)\s*[.!?]*\s*",
+            state.user_message,
+            re.IGNORECASE,
+        )
+    )
+    follows_all_overdue_request = is_pronominal_followup and any(
+        item.get("role") == "user"
+        and _requests_all_overdue_completion(item.get("content", ""))
+        for item in state.history
+    )
+    return explicitly_requests_general_list or follows_all_overdue_request
+
+
+def _prerequisite_due_date(
+    state: AgentState,
+    title: str,
+    target_due_date: date,
+    source_message: str | None = None,
+) -> date | None:
+    """Infer a due date for a named prerequisite placed before a dated event."""
+    message = source_message or state.user_message
+    match = re.search(
+        r"\bbefore\s+that\b(?P<source>.*)$",
+        message,
+        re.IGNORECASE,
+    )
+    if not match or not title.strip():
+        return None
+
+    source_text = match.group("source")
+    if title.casefold() not in source_text.casefold():
+        return None
+
+    try:
+        return resolve_commitment_due_date(
+            source_text,
+            get_settings().family_timezone,
+        )
+    except ValueError:
+        return target_due_date - timedelta(days=1)
+
+
+def _past_due_confirmation_source(state: AgentState) -> str | None:
+    """Return the user's original request after our past-date confirmation."""
+    history = list(state.history)
+    if (
+        history
+        and history[-1].get("role") == "user"
+        and history[-1].get("content", "").strip()
+        == state.user_message.strip()
+    ):
+        history.pop()
+
+    assistant_index = next(
+        (
+            index
+            for index in range(len(history) - 1, -1, -1)
+            if history[index].get("role") == "assistant"
+        ),
+        None,
+    )
+    if assistant_index is None:
+        return None
+
+    assistant_text = history[assistant_index].get("content", "").casefold()
+    asks_about_past_date = (
+        "in the past" in assistant_text
+        and any(
+            term in assistant_text
+            for term in ("confirm", "intentional", "correct", "mistake", "different date")
+        )
+    )
+    if not asks_about_past_date:
+        return None
+
+    for item in reversed(history[:assistant_index]):
+        if item.get("role") != "user":
+            continue
+        content = item.get("content", "")
+        try:
+            resolve_commitment_due_date(
+                content,
+                get_settings().family_timezone,
+            )
+        except ValueError:
+            continue
+        return content
+    return None
+
+
+def _confirms_past_due_date(state: AgentState) -> bool:
+    if _past_due_confirmation_source(state) is None:
+        return False
+    message = state.user_message.casefold()
+    if re.search(r"\b(?:no|not|mistake|different|instead)\b", message):
+        return False
+    return bool(
+        re.search(r"\b(?:yes|correct|intentional|that's right|right)\b", message)
+    )
+
+
+def _commitment_date_source(state: AgentState) -> str:
+    if _confirms_past_due_date(state):
+        confirmed_source = _past_due_confirmation_source(state)
+        if confirmed_source:
+            return confirmed_source
+
+    try:
+        resolve_commitment_due_date(
+            state.user_message,
+            get_settings().family_timezone,
+        )
+        return state.user_message
+    except ValueError:
+        pass
 
     history = list(state.history)
     if (
         history
         and history[-1].get("role") == "user"
-        and history[-1].get("content", "").strip() == state.user_message.strip()
+        and history[-1].get("content", "").strip()
+        == state.user_message.strip()
+    ):
+        history.pop()
+
+    assistant_index = next(
+        (
+            index
+            for index in range(len(history) - 1, -1, -1)
+            if history[index].get("role") == "assistant"
+        ),
+        None,
+    )
+    if assistant_index is None:
+        return state.user_message
+
+    question = history[assistant_index].get("content", "").casefold()
+    clarification_terms = (
+        "commitment",
+        "bill",
+        "amount",
+        "due date",
+        "date",
+        "category",
+        "title",
+        "what should i call",
+    )
+    if "?" not in question or not any(
+        term in question for term in clarification_terms
+    ):
+        return state.user_message
+
+    previous_assistant_index = next(
+        (
+            index
+            for index in range(assistant_index - 1, -1, -1)
+            if history[index].get("role") == "assistant"
+        ),
+        -1,
+    )
+    for item in reversed(history[previous_assistant_index + 1 : assistant_index]):
+        if item.get("role") != "user":
+            continue
+        content = item.get("content", "")
+        try:
+            resolve_commitment_due_date(
+                content,
+                get_settings().family_timezone,
+            )
+        except ValueError:
+            continue
+        return content
+
+    return state.user_message
+
+
+def _format_commitment_list(
+    records: list[dict],
+    recently_completed: dict | None = None,
+) -> str:
+    if not records:
+        lines = [
+            "There are no active commitments.\n\n"
+            "| # | Title | Type| Category | Status | Due Date | ID |\n"
+            "|---:|---|---|---|---|---|---|\n"
+            "| — | None | — | — | — | — | — |",
+        ]
+    else:
+        lines = [
+            "Your Current Commitments",
+            "",
+            "| **#** | **Title** | **Type** | **Category** | **Status** | **Due Date** | **ID** |",
+            "| ---: | --- | --- | --- | --- | --- | --- |",
+        ]
+    for index, record in enumerate(records, start=1):
+        title = str(record.get("title") or "Untitled commitment").replace("|", "\\|")
+        commitment_type = str(record.get("commitment_type") or "—").upper().split(".")[-1]
+        category = str(record.get("category") or "GENERAL").replace("|", "\\|")
+        status = str(record.get("status", "")).upper().split(".")[-1] or "UNKNOWN"
+        due_date = record.get("due_date") or "—"
+        commitment_id = str(record.get("id", "—"))
+        lines.append(
+            f"| {index} | {title} | {commitment_type} | {category} | "
+            f"**{status}** | {due_date} | `{commitment_id}` |"
+        )
+
+    active_titles = {
+        str(record.get("title") or "").strip().casefold()
+        for record in records
+    }
+    if (
+        recently_completed is not None
+        and str(recently_completed.get("title") or "").strip().casefold()
+        not in active_titles
+    ):
+        title = str(
+            recently_completed.get("title") or "Untitled commitment"
+        ).replace("|", "\\|")
+        completed_id = str(recently_completed.get("id", "—"))
+        completed_at = recently_completed.get("completed_at")
+        completion_detail = (
+            f" was completed on {str(completed_at)[:10]}"
+            if completed_at
+            else " is completed"
+        )
+        lines.extend(
+            [
+                "",
+                f"*Note:* The **{title}** commitment (ID `{completed_id}`)"
+                f"{completion_detail}, so it no longer appears in the active list. "
+                "Let me know if you’d like to see completed items, add a new "
+                "commitment, or make any other changes!",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _most_recently_completed(records: list[dict]) -> dict | None:
+    completed_records = [
+        record
+        for record in records
+        if isinstance(record, dict)
+        and record.get("id") is not None
+        and str(record.get("status", "")).upper().split(".")[-1]
+        == "COMPLETED"
+        and record.get("completed_at")
+    ]
+    if not completed_records:
+        return None
+    return max(completed_records, key=lambda record: str(record["completed_at"]))
+
+
+def _summarize_successful_actions(state: AgentState) -> str | None:
+    """Report persisted actions if the model exhausts its tool-call rounds."""
+    created_commitments: list[str] = []
+    created_dependencies: list[str] = []
+    completed: list[str] = []
+    for call, entry in zip(state.tool_calls, state.tool_results):
+        result = entry.get("result")
+        if not isinstance(result, dict) or not result.get("success", False):
+            continue
+        tool_name = call.get("name")
+        if tool_name == "create_commitment":
+            created_commitments.append(
+                str(result.get("title") or call.get("arguments", {}).get("title") or "commitment")
+            )
+        elif tool_name == "create_dependency":
+            created_dependencies.append(
+                str(result.get("message") or "Dependency link created")
+            )
+        elif tool_name == "update_commitment":
+            completed.append(str(result.get("title") or "commitment"))
+
+    parts: list[str] = []
+    if created_commitments:
+        parts.append("Created commitments: " + ", ".join(created_commitments) + ".")
+    if created_dependencies:
+        parts.append("Dependencies created: " + " ".join(created_dependencies))
+    if completed:
+        parts.append("Marked completed: " + ", ".join(completed) + ".")
+    if not parts:
+        return None
+    if (
+        (
+            _is_dependency_request(state.user_message)
+            or re.search(r"\bbefore\b", state.user_message, re.I)
+        )
+        and not created_dependencies
+    ):
+        parts.append(
+            "I couldn't confirm that the dependency links were created."
+        )
+    return " ".join(parts)
+
+
+async def _create_missing_prerequisite_links(
+    state: AgentState, tool_registry: ToolRegistry
+) -> list[str]:
+    """Link newly created commitments when the user's wording names prerequisites."""
+    message = state.user_message
+    split = re.search(r"\bbefore\s+(?:that|the\s+.+?)\b", message, re.I)
+    if not split:
+        return []
+    before_clause = message[: split.start()]
+    after_clause = message[split.end() :]
+    created: list[dict] = []
+    for call, entry in zip(state.tool_calls, state.tool_results):
+        result = entry.get("result")
+        if (
+            call.get("name") == "create_commitment"
+            and isinstance(result, dict)
+            and result.get("success")
+            and result.get("commitment_id")
+        ):
+            created.append(
+                {
+                    "id": str(result["commitment_id"]),
+                    "title": str(result.get("title") or call.get("arguments", {}).get("title") or ""),
+                }
+            )
+    if len(created) < 2:
+        return []
+
+    stop_words = {
+        "the", "and", "that", "before", "after", "have", "has", "had",
+        "to", "go", "for", "on", "i", "my", "a", "an", "some", "new",
+        "function", "shop", "store", "buy", "get", "cut", "hair", "clothes",
+    }
+
+    def tokens(value: str) -> set[str]:
+        return {
+            token
+            for token in re.findall(r"[a-z0-9]+", value.casefold())
+            if token not in stop_words and not token.isdigit()
+        }
+
+    left_tokens = tokens(before_clause)
+    right_tokens = tokens(after_clause)
+    scored = [
+        (
+            item,
+            len(tokens(item["title"]) & left_tokens),
+            len(tokens(item["title"]) & right_tokens),
+        )
+        for item in created
+    ]
+    targets = [item for item, left, _ in scored if left >= 1 and left >= max(right for _, _, right in scored)]
+    sources = [item for item, _, right in scored if right >= 1 and item not in targets]
+    if len(targets) != 1 or not sources:
+        return []
+
+    existing_edges = {
+        (
+            str(call.get("arguments", {}).get("source_commitment_id")),
+            str(call.get("arguments", {}).get("target_commitment_id")),
+        )
+        for call in state.tool_calls
+        if call.get("name") == "create_dependency"
+    }
+    created_messages: list[str] = []
+    for source in sources:
+        edge = (source["id"], targets[0]["id"])
+        if edge in existing_edges:
+            continue
+        arguments = {
+            "family_id": str(state.family_id),
+            "source_commitment_id": edge[0],
+            "target_commitment_id": edge[1],
+            "relationship_type": "MUST_COMPLETE_BEFORE",
+        }
+        try:
+            result = await tool_registry.execute("create_dependency", arguments)
+        except Exception as exc:
+            result = {"success": False, "error": str(exc)}
+        state.tool_calls.append({"name": "create_dependency", "arguments": arguments})
+        state.tool_results.append({"tool": "create_dependency", "result": result})
+        if isinstance(result, dict) and result.get("success"):
+            created_messages.append(str(result.get("message") or "Dependency link created."))
+    return created_messages
+
+
+def _expense_date_source(state: AgentState) -> str:
+    """Preserve date intent through an expense clarification exchange."""
+    history = list(state.history)
+
+    if (
+        history
+        and history[-1].get("role") == "user"
+        and history[-1].get("content", "").strip()
+        == state.user_message.strip()
     ):
         history.pop()
 
     last_assistant = next(
-        (item for item in reversed(history) if item.get("role") == "assistant"),
+        (
+            item
+            for item in reversed(history)
+            if item.get("role") == "assistant"
+        ),
         None,
     )
+
     if last_assistant is None:
         return state.user_message
 
     question = last_assistant.get("content", "")
     normalized_question = question.casefold()
+
     clarification_terms = (
         "expense",
         "spend",
@@ -54,22 +785,182 @@ def _expense_date_source(state: AgentState) -> str:
         "did you mean",
         "which one",
     )
-    if "?" not in question or not any(term in normalized_question for term in clarification_terms):
+
+    if "?" not in question or not any(
+        term in normalized_question for term in clarification_terms
+    ):
         return state.user_message
 
     user_messages = [state.user_message]
+
     for item in reversed(history):
         role = item.get("role")
+
         if role == "assistant":
             if "?" not in item.get("content", ""):
                 break
+
         elif role == "user":
             content = item.get("content", "")
-            if content.strip().casefold().rstrip(".! ") not in _CONFIRMATION_REPLIES:
+
+            if (
+                content.strip().casefold().rstrip(".! ")
+                not in _CONFIRMATION_REPLIES
+            ):
                 user_messages.append(content)
 
     return "\n".join(reversed(user_messages))
 
+def _resolve_commitment_candidate(
+    user_message: str,
+    commitments: list[dict],
+    *,
+    allow_bare_amount: bool = False,
+) -> str | None:
+    """Return an ID only when explicit user details identify one record."""
+
+    if not commitments:
+        return None
+
+    
+    # Extract the requested amount without confusing it with the
+    # new due date being requested.
+    amount = None
+
+    amount_patterns = [
+        r"₹\s*([\d,]+(?:\.\d{1,2})?)",
+        r"\b(?:bill|amount|commitment)\s+(?:of\s+)?"
+        r"(?:₹\s*)?([\d,]+(?:\.\d{1,2})?)\b",
+        r"\b([\d,]+(?:\.\d{1,2})?)\s+"
+        r"(?:rupees|inr|bill|amount|commitment)\b",
+    ]
+
+    for pattern in amount_patterns:
+        match = re.search(pattern, user_message, re.IGNORECASE)
+        if match:
+            try:
+                amount = Decimal(match.group(1).replace(",", ""))
+            except InvalidOperation:
+                amount = None
+            break
+
+    # Allow a bare number only when the preceding assistant message
+    # explicitly asked the user to identify an amount.
+    if amount is None and allow_bare_amount:
+        numbers = re.findall(
+            r"(?<![\w.])\d[\d,]*(?:\.\d{1,2})?(?![\w.])",
+            user_message,
+        )
+
+        # Do not guess when the reply contains several numbers.
+        if len(numbers) == 1:
+            try:
+                amount = Decimal(numbers[0].replace(",", ""))
+            except InvalidOperation:
+                amount = None
+
+
+
+    # Match an explicitly stated calendar date.
+    date_match = re.search(
+        r"\b("
+        r"January|February|March|April|May|June|July|August|"
+        r"September|October|November|December"
+        r")\s+(\d{1,2})(?:,?\s+(\d{4}))?\b",
+        user_message,
+        re.IGNORECASE,
+    )
+
+    candidates = commitments
+
+    if amount is not None:
+        candidates = [
+            item for item in candidates
+            if item.get("amount") is not None
+            and Decimal(str(item["amount"])) == amount
+        ]
+
+    if date_match:
+        from datetime import date
+
+        month_name, day, year = date_match.groups()
+        month = date_match.group(1).lower()
+        months = {
+            "january": 1, "february": 2, "march": 3,
+            "april": 4, "may": 5, "june": 6,
+            "july": 7, "august": 8, "september": 9,
+            "october": 10, "november": 11, "december": 12,
+        }
+
+        try:
+            requested_month = months[month]
+            requested_day = int(day)
+            requested_year = int(year) if year else None
+        except (KeyError, ValueError):
+            return None
+
+        def date_matches(item: dict) -> bool:
+            raw_date = item.get("due_date")
+            if not raw_date:
+                return False
+
+            try:
+                stored_date = date.fromisoformat(str(raw_date)[:10])
+            except ValueError:
+                return False
+
+            return (
+                stored_date.month == requested_month
+                and stored_date.day == requested_day
+                and (
+                    requested_year is None
+                    or stored_date.year == requested_year
+                )
+            )
+
+        # A date in a due-date correction may refer to the NEW date,
+        # not the existing record. Use date filtering only if it narrows
+        # the candidates; otherwise preserve the amount-based selection.
+        dated_candidates = [
+            item for item in candidates if date_matches(item)
+        ]
+
+        if dated_candidates:
+            candidates = dated_candidates
+        elif amount is None:
+            return None
+
+    if len(candidates) > 1:
+        title_query = _COMMITMENT_ACTION_PREFIX_RE.sub(
+            "", user_message, count=1
+        )
+        title_query = _COMMITMENT_ACTION_SUFFIX_RE.sub(
+            "", title_query, count=1
+        )
+        query_tokens = {
+            token
+            for token in re.findall(r"[a-z0-9]+", title_query.casefold())
+            if token not in _TITLE_MATCH_STOP_WORDS and not token.isdigit()
+        }
+        if query_tokens:
+            scored = []
+            for item in candidates:
+                title_tokens = set(
+                    re.findall(r"[a-z0-9]+", str(item.get("title") or "").casefold())
+                )
+                score = len(query_tokens & title_tokens) / len(query_tokens)
+                scored.append((score, item))
+            scored.sort(key=lambda pair: pair[0], reverse=True)
+            best_score = scored[0][0]
+            second_score = scored[1][0]
+            if best_score >= 0.6 and best_score - second_score >= 0.15:
+                candidates = [scored[0][1]]
+
+    if len(candidates) != 1:
+        return None
+
+    commitment_id = candidates[0].get("id")
+    return str(commitment_id) if commitment_id else None
 
 class FamilyContextAgent:
     def __init__(
@@ -80,11 +971,370 @@ class FamilyContextAgent:
         self.ai_client = ai_client
         self.tool_registry = tool_registry
 
-    async def run(self, state: AgentState) -> AgentState:
+    async def run(self, state: AgentState) -> AgentState: # type: ignore
+        past_due_question = _past_due_creation_confirmation(state)
+        if past_due_question is not None:
+            state.assistant_message = past_due_question
+            state.requires_clarification = True
+            return state
+
+        pending_bill = _pending_bill_request(state)
+        bill_detail_message = state.user_message
+        if pending_bill and re.fullmatch(
+            r"\s*(?:yes|yeah|yep|correct|intentional|that's right)[.!\s]*",
+            state.user_message,
+            re.I,
+        ):
+            for item in reversed(state.history[:-1]):
+                if item.get("role") == "user" and _bill_details_from_reply(
+                    str(item.get("content") or "")
+                ):
+                    bill_detail_message = str(item["content"])
+                    break
+        bill_details = (
+            _bill_details_from_reply(bill_detail_message) if pending_bill else None
+        )
+        if pending_bill and bill_details:
+            amount, due_date = bill_details
+
+            current_date = state.metadata.get("today")
+            today = (
+                date.fromisoformat(current_date)
+                if current_date
+                else today_in(get_settings().family_timezone)
+            )
+
+            if due_date < today and not re.fullmatch(
+
+                r"\s*(?:yes|yeah|yep|correct|intentional|that's right)[.!\s]*",
+                state.user_message,
+                re.I,
+            ):
+                state.assistant_message = (
+                    f"The due date you gave, {due_date.isoformat()}, is in the past. "
+                    "Is that date intentional? Reply yes to save it as overdue, "
+                    "or send a corrected date."
+                )
+                state.requires_clarification = True
+                return state
+
+            title_match = re.search(
+                r"\b(?:add|create|record|track|save)\s+(?:a|an|the)?\s*(.+?\bbill\b)",
+                pending_bill,
+                re.I,
+            )
+            title = title_match.group(1).strip(" .,!?") if title_match else "Bill"
+            title = " ".join(word.capitalize() for word in title.split())
+            category = "UTILITIES"
+            tool_arguments = {
+                "family_id": str(state.family_id),
+                "commitment_type": "BILL",
+                "title": title,
+                "category": category,
+                "amount": str(amount),
+                "due_date": due_date.isoformat(),
+            }
+            if state.member_id is not None:
+                tool_arguments["member_id"] = str(state.member_id)
+            result = await self.tool_registry.execute(
+                "create_commitment", tool_arguments
+            )
+            state.tool_calls.append(
+                {"name": "create_commitment", "arguments": tool_arguments}
+            )
+            state.tool_results.append(
+                {"tool": "create_commitment", "result": result}
+            )
+            if isinstance(result, dict) and result.get("success", False):
+                state.assistant_message = (
+                    f"{title} added as a bill commitment for ₹{amount:.2f}, "
+                    f"due {due_date.isoformat()}."
+                )
+            else:
+                state.assistant_message = (
+                    f"I couldn't add the {title}. Please try again."
+                )
+            return state
+
+        show_active_commitments = _requests_commitment_list(state)
+        complete_all_overdue = _requests_all_overdue_completion(
+            state.user_message
+        )
+        named_completion_targets = _named_multi_completion_targets(
+            state.user_message
+        ) or _named_bill_completion_targets(state.user_message, state.history)
+
+        if (
+            show_active_commitments
+            or complete_all_overdue
+            or named_completion_targets
+        ):
+            search_arguments = {
+                "family_id": str(state.family_id),
+            }
+            if complete_all_overdue:
+                search_arguments["status"] = "OVERDUE"
+            search_result = await self.tool_registry.execute(
+                "search_commitments",
+                search_arguments,
+            )
+            state.tool_calls.append(
+                {
+                    "name": "search_commitments",
+                    "arguments": search_arguments,
+                }
+            )
+            state.tool_results.append(
+                {
+                    "tool": "search_commitments",
+                    "result": search_result,
+                }
+            )
+
+            if (
+                not isinstance(search_result, dict)
+                or not search_result.get("success", False)
+                or not isinstance(search_result.get("commitments"), list)
+            ):
+                state.assistant_message = (
+                    "I couldn't retrieve the commitments. Please try again."
+                )
+                state.requires_clarification = True
+                return state
+
+            active_records = [
+                record
+                for record in search_result["commitments"]
+                if isinstance(record, dict)
+                and record.get("id") is not None
+                and str(record.get("status", "")).upper().split(".")[-1]
+                in {"PENDING", "OVERDUE"}
+            ]
+
+            if named_completion_targets:
+                def _normalize_title(value: str) -> str:
+                    return " ".join(re.findall(r"[a-z0-9]+", value.casefold()))
+
+                matches: list[dict] = []
+                for target in named_completion_targets:
+                    normalized_target = _normalize_title(target)
+                    candidates = [
+                        record
+                        for record in active_records
+                        if normalized_target in _normalize_title(
+                            str(record.get("title") or "")
+                        )
+                    ]
+                    if len(candidates) != 1:
+                        state.assistant_message = (
+                            f"I couldn't uniquely match **{target}** to an active commitment. "
+                            "No commitments were changed. Please specify the titles."
+                        )
+                        state.requires_clarification = True
+                        return state
+                    if candidates[0] not in matches:
+                        matches.append(candidates[0])
+
+                completed_titles: list[str] = []
+                failed_titles: list[str] = []
+                for record in matches:
+                    title = str(record.get("title") or "Untitled commitment")
+                    update_arguments = {
+                        "family_id": str(state.family_id),
+                        "commitment_id": str(record["id"]),
+                        "status": "COMPLETED",
+                    }
+                    try:
+                        update_result = await self.tool_registry.execute(
+                            "update_commitment", update_arguments
+                        )
+                    except Exception as exc:
+                        update_result = {"success": False, "error": str(exc)}
+                    state.tool_calls.append(
+                        {
+                            "name": "update_commitment",
+                            "arguments": update_arguments,
+                        }
+                    )
+                    state.tool_results.append(
+                        {
+                            "tool": "update_commitment",
+                            "result": update_result,
+                        }
+                    )
+                    if (
+                        isinstance(update_result, dict)
+                        and update_result.get("success", False)
+                    ):
+                        completed_titles.append(title)
+                    else:
+                        failed_titles.append(title)
+
+                response_parts = []
+                if completed_titles:
+                    response_parts.append(
+                        "Marked completed: "
+                        + ", ".join(completed_titles)
+                        + "."
+                    )
+                if failed_titles:
+                    response_parts.append("Could not complete: " + ", ".join(failed_titles) + ".")
+                state.assistant_message = " ".join(response_parts)
+                return state
+
+            if show_active_commitments:
+                completed_search_arguments = {
+                    "family_id": str(state.family_id),
+                    "status": "COMPLETED",
+                }
+                completed_search_result = await self.tool_registry.execute(
+                    "search_commitments",
+                    completed_search_arguments,
+                )
+                state.tool_calls.append(
+                    {
+                        "name": "search_commitments",
+                        "arguments": completed_search_arguments,
+                    }
+                )
+                state.tool_results.append(
+                    {
+                        "tool": "search_commitments",
+                        "result": completed_search_result,
+                    }
+                )
+                completed_records = (
+                    completed_search_result.get("commitments", [])
+                    if isinstance(completed_search_result, dict)
+                    and completed_search_result.get("success", False)
+                    and isinstance(
+                        completed_search_result.get("commitments"), list
+                    )
+                    else []
+                )
+                state.assistant_message = _format_commitment_list(
+                    active_records,
+                    _most_recently_completed(completed_records),
+                )
+                return state
+
+            if not active_records:
+                state.assistant_message = "There are no overdue commitments to complete."
+                return state
+
+            completed_titles: list[str] = []
+            failed_titles: list[str] = []
+            for record in active_records:
+                update_arguments = {
+                    "family_id": str(state.family_id),
+                    "commitment_id": str(record["id"]),
+                    "status": "COMPLETED",
+                }
+                update_result = await self.tool_registry.execute(
+                    "update_commitment",
+                    update_arguments,
+                )
+                state.tool_calls.append(
+                    {
+                        "name": "update_commitment",
+                        "arguments": update_arguments,
+                    }
+                )
+                state.tool_results.append(
+                    {
+                        "tool": "update_commitment",
+                        "result": update_result,
+                    }
+                )
+                if (
+                    isinstance(update_result, dict)
+                    and update_result.get("success", False)
+                ):
+                    completed_titles.append(
+                        str(record.get("title") or "Untitled commitment")
+                    )
+                else:
+                    failed_titles.append(
+                        str(record.get("title") or "Untitled commitment")
+                    )
+
+            response_parts = []
+            if completed_titles:
+                response_parts.append(
+                    "Marked completed: " + ", ".join(completed_titles) + "."
+                )
+            if failed_titles:
+                response_parts.append(
+                    "Could not complete: " + ", ".join(failed_titles) + "."
+                )
+            state.assistant_message = " ".join(response_parts)
+            return state
+
+        context_section = ""
+
+        if state.household_context:
+            context_section = f"""
+
+CURRENT HOUSEHOLD CONTEXT
+=========================
+
+The following information comes from the application's
+database and represents the current household state.
+
+{state.household_context}
+
+Use this information when answering questions about
+the family.
+
+Do not invent household information that is not present
+in this context or available through tools.
+
+If the context is insufficient, use the appropriate tool
+or ask the user for clarification.
+"""
+
+        current_date = state.metadata.get("today")
+        date_context = (
+            f"\n\nCURRENT APPLICATION DATE\n=========================\n"
+            f"Today is {current_date}. Use this date for date questions and relative dates."
+            if current_date
+            else ""
+        )
+        dependency_context = ""
+        if _is_dependency_request(state.user_message):
+            earlier_plans = [
+                str(item.get("content") or "")
+                for item in state.history
+                if item.get("role") == "user"
+                and re.search(r"\bbefore\b", str(item.get("content") or ""), re.I)
+            ]
+            if earlier_plans:
+                dependency_context = """
+
+DEPENDENCY FOLLOW-UP
+====================
+
+The user is asking to set up dependencies for plans they already described.
+Use the earlier conversation to identify each prerequisite and its target event.
+For a statement that errands must happen before an event, create each errand as
+the source and the event as the target of MUST_COMPLETE_BEFORE. Search for the
+commitments first and reuse matching records. If the earlier turn only proposed
+the commitments and they do not exist yet, create them from the explicit details
+in that turn, then use their returned IDs to create the dependency links. Do not
+ask the user to repeat titles or confirm a relationship that was stated clearly.
+Ask only if the conversation does not identify a source or target unambiguously.
+Report which commitments and dependency links were actually created.
+"""
+
         messages = [
             {
                 "role": "system",
-                "content": SYSTEM_PROMPT,
+                "content": (
+                    SYSTEM_PROMPT
+                    + context_section
+                    + date_context
+                    + dependency_context
+                ),
             },
         ]
 
@@ -96,8 +1346,34 @@ class FamilyContextAgent:
                 }
             )
 
+        document = state.metadata.get("document")
+
+        if document:
+            document_context = (
+                "The user attached the following document. "
+                "Use this document as the primary source when answering "
+                "questions about it.\n\n"
+                f"File name: {document.get('file_name')}\n"
+                f"Document type: {document.get('document_type')}\n"
+                f"Processing status: "
+                f"{document.get('processing_status')}\n"
+                f"Extracted text: "
+                f"{document.get('extracted_text')}\n"
+                f"Extracted data: "
+                f"{json.dumps(document.get('extracted_data'), default=str)}"
+            )
+
+            messages.append(
+                {
+                    "role": "system",
+                    "content": document_context,
+                }
+            )
+
         tool_definitions = self.tool_registry.definitions()
         max_tool_rounds = 5
+        # Keep search evidence within this single agent run.
+        commitment_search_records: list[dict] | None = None
 
         for _ in range(max_tool_rounds):
             response = await self.ai_client.chat(
@@ -105,16 +1381,47 @@ class FamilyContextAgent:
                 tools=tool_definitions,
             )
 
-            # No tool requested by the AI.
-            # Return the normal assistant response.
             if not response.tool_calls:
+                failed_write_tools = {
+                    "add_expense",
+                    "create_commitment",
+                    "update_commitment",
+                    "create_dependency",
+                }
+
+                persistence_failed = any(
+                    call.get("name") in failed_write_tools
+                    and isinstance(entry.get("result"), dict)
+                    and entry["result"].get("success") is False
+                    and (
+                        not isinstance(entry["result"].get("error"), dict)
+                        or entry["result"]["error"].get("code")
+                        == "persistence_error"
+                    )
+                    for call, entry in zip(
+                        state.tool_calls, state.tool_results
+                    )
+                )
+
+                if persistence_failed:
+                    state.assistant_message = (
+                        "I couldn't confirm that the requested change "
+                        "was saved. Please try again."
+                    )
+                    return state
+                created_links = await _create_missing_prerequisite_links(
+                    state, self.tool_registry
+                )
                 state.assistant_message = (
                     response.content
                     or "I couldn't generate a response."
                 )
+                if created_links:
+                    state.assistant_message += (
+                        " Dependencies created: " + " ".join(created_links)
+                    )
                 return state
 
-            # Add the assistant's tool request to the conversation.
             assistant_message = {
                 "role": "assistant",
                 "content": response.content,
@@ -137,28 +1444,326 @@ class FamilyContextAgent:
 
             messages.append(assistant_message)
 
-            # Execute every tool requested by the AI.
             for tool_call in response.tool_calls:
                 arguments = dict(tool_call.arguments)
 
-                # family_id is application context.
-                # The user does not need to provide it.
+                # Add application-owned family context.
                 arguments["family_id"] = str(state.family_id)
 
-                try:
-                    if tool_call.name == "add_expense":
+                if tool_call.name in {
+                    "add_expense",
+                    "create_commitment",
+                }:
+                    if state.member_id is not None:
+                        arguments["member_id"] = str(state.member_id)
+
+                # Resolve dates before checking missing fields.
+                if tool_call.name == "add_expense":
+                    try:
                         resolved_date = resolve_expense_date(
                             _expense_date_source(state),
                             get_settings().family_timezone,
+                            today=date.fromisoformat(state.metadata["today"])
+                            if state.metadata.get("today")
+                            else None,
                         )
-                        # Tool arguments are model-proposed; the original user
-                        # message and application timezone determine the date.
-                        arguments["expense_date"] = resolved_date.isoformat()
+                    except ValueError as exc:
+                        state.assistant_message = str(exc)
+                        return state
 
-                    result = await self.tool_registry.dispatch(
+                    arguments["expense_date"] = (
+                        resolved_date.isoformat()
+                    )
+
+                elif tool_call.name == "create_commitment":
+                    commitment_type = str(
+                        arguments.get("commitment_type", "")
+                    ).upper()
+
+                    if commitment_type in _DATE_REQUIRED_COMMITMENT_TYPES:
+                        confirmation_source = _past_due_confirmation_source(state)
+                        confirmation_reply = _confirms_past_due_date(state)
+                        date_source = _commitment_date_source(state)
+
+                        if confirmation_source and not confirmation_reply:
+                            try:
+                                resolve_commitment_due_date(
+                                    state.user_message,
+                                    get_settings().family_timezone,
+                                )
+                            except ValueError:
+                                state.assistant_message = (
+                                    "Please provide the corrected due date. "
+                                    "I won't save the previously suggested past date."
+                                )
+                                state.requires_clarification = True
+                                return state
+                            date_source = state.user_message
+
+                        try:
+                            resolved_due_date = (
+                                resolve_commitment_due_date(
+                                    date_source,
+                                    get_settings().family_timezone,
+                                    today=date.fromisoformat(state.metadata["today"])
+                                    if state.metadata.get("today")
+                                    else None,
+                                )
+                            )
+                        except ValueError:
+                            # A missing or unsupported date must not
+                            # silently default to today. Allow the
+                            # clarification layer to ask for a date.
+                            arguments.pop("due_date", None)
+                        else:
+                            current_date = state.metadata.get("today")
+                            today = (
+                                date.fromisoformat(current_date)
+                                if current_date
+                                else today_in(get_settings().family_timezone)
+                            )
+                            if (
+                                resolved_due_date < today
+                                and not (confirmation_source and confirmation_reply)
+                            ):
+                                title = str(
+                                    arguments.get("title", "this commitment")
+                                )
+                                state.assistant_message = (
+                                    f"The due date for '{title}' is "
+                                    f"{resolved_due_date.isoformat()}, which is in the past. "
+                                    "Is that date intentional?"
+                                )
+                                if arguments.get("amount") is None:
+                                    state.assistant_message += (
+                                        " Please reply with the amount and confirmation "
+                                        "together (for example, ‘336, yes, the date is correct’)."
+                                    )
+                                else:
+                                    state.assistant_message += (
+                                        " Reply yes to save it as overdue, or send a "
+                                        "corrected due date."
+                                    )
+                                state.requires_clarification = True
+                                return state
+
+                            inferred_prerequisite_date = _prerequisite_due_date(
+                                state,
+                                str(arguments.get("title", "")),
+                                resolved_due_date,
+                                source_message=date_source,
+                            )
+                            if inferred_prerequisite_date is not None:
+                                resolved_due_date = inferred_prerequisite_date
+                            arguments["due_date"] = (
+                                resolved_due_date.isoformat()
+                            )
+
+                    clarification = build_clarification(
                         tool_call.name,
                         arguments,
                     )
+
+                    if (
+                        clarification is not None
+                        and clarification.clarification is not None
+                    ):
+                        state.assistant_message = (
+                            clarification.clarification.question
+                        )
+                        return state
+
+                # Validate commitment selection before executing an update.
+                if tool_call.name == "update_commitment":
+                    def _get_record_field(record, field, default=None):
+                        if isinstance(record, dict):
+                            value = record.get(field, default)
+                        else:
+                            value = getattr(record, field, default)
+
+                        if field == "status" and value is not None:
+                            value = getattr(value, "value", value)
+
+                        return value
+
+                    def _pending_records(records):
+                        return [
+                            item
+                            for item in records
+                            if str(
+                                _get_record_field(item, "status", "")
+                            ).upper().split(".")[-1]
+                            in {"PENDING", "SCHEDULED", "IN_PROGRESS", "OVERDUE"}
+                        ]
+
+                    def _idempotent_terminal_records(records, update_arguments):
+                        requested_status = str(
+                            update_arguments.get("status", "")
+                        ).upper()
+                        if requested_status not in {"COMPLETED", "CANCELLED"}:
+                            return []
+                        return [
+                            record
+                            for record in records
+                            if str(
+                                _get_record_field(record, "status", "")
+                            ).upper().split(".")[-1]
+                            == requested_status
+                            and all(
+                                _get_record_field(record, field) == value
+                                for field, value in update_arguments.items()
+                                if field not in {"family_id", "commitment_id"}
+                            )
+                        ]
+
+                    pending_records = _pending_records(
+                        commitment_search_records or []
+                    )
+                    if not pending_records:
+                        pending_records = _idempotent_terminal_records(
+                            commitment_search_records or [], arguments
+                        )
+
+                    if not pending_records:
+                        search_arguments = _commitment_search_filters(state)
+                        requested_status = str(arguments.get("status", "")).upper()
+                        if requested_status in {"COMPLETED", "CANCELLED"}:
+                            # Permit a same-status request to resolve as a no-op.
+                            # Explicit status is required because ordinary searches
+                            # intentionally hide terminal commitments.
+                            search_arguments["status"] = requested_status
+                        search_result = await self.tool_registry.execute(
+                            "search_commitments",
+                            search_arguments,
+                        )
+                        state.tool_calls.append(
+                            {
+                                "name": "search_commitments",
+                                "arguments": search_arguments,
+                            }
+                        )
+                        state.tool_results.append(
+                            {
+                                "tool": "search_commitments",
+                                "result": search_result,
+                            }
+                        )
+
+                        if (
+                            not isinstance(search_result, dict)
+                            or not search_result.get("success", False)
+                            or not isinstance(search_result.get("commitments"), list)
+                        ):
+                            state.assistant_message = (
+                                "I couldn't verify the matching commitments. "
+                                "Please try again."
+                            )
+                            state.requires_clarification = True
+                            return state
+
+                        commitment_search_records = [
+                            item
+                            for item in search_result["commitments"]
+                            if isinstance(item, dict) and item.get("id") is not None
+                        ]
+                        pending_records = _pending_records(
+                            commitment_search_records
+                        )
+                        if not pending_records:
+                            pending_records = _idempotent_terminal_records(
+                                commitment_search_records, arguments
+                            )
+
+                    if not pending_records:
+                        state.assistant_message = (
+                            "I couldn't find an active commitment to update. "
+                            "Completed and cancelled commitments cannot be edited."
+                        )
+                        state.requires_clarification = True
+                        return state
+
+                    if len(pending_records) == 1:
+                        verified_id = str(
+                            _get_record_field(pending_records[0], "id", "")
+                        )
+                        if not verified_id:
+                            state.assistant_message = (
+                                "I couldn't verify the matching commitment. "
+                                "Please try again."
+                            )
+                            state.requires_clarification = True
+                            return state
+
+                        arguments["commitment_id"] = verified_id
+
+                    else:
+                        history = list(state.history)
+
+                        if (
+                            history
+                            and history[-1].get("role") == "user"
+                            and history[-1].get("content", "").strip()
+                            == state.user_message.strip()
+                        ):
+                            history.pop()
+
+                        previous_assistant = next(
+                            (
+                                item
+                                for item in reversed(history)
+                                if item.get("role") == "assistant"
+                            ),
+                            None,
+                        )
+
+                        previous_question = (
+                            previous_assistant.get("content", "").casefold()
+                            if previous_assistant
+                            else ""
+                        )
+
+                        allow_bare_amount = bool(
+                            re.search(
+                                r"\b(amount|how much|rupees|currency)\b",
+                                previous_question,
+                            )
+                        )
+
+                        verified_id = _resolve_commitment_candidate(
+                            state.user_message,
+                            pending_records,
+                            allow_bare_amount=allow_bare_amount,
+                        )
+
+                        if verified_id is None:
+                            state.assistant_message = (
+                                "I found multiple matching commitments. "
+                                "Please specify the amount or existing due date "
+                                "so I can identify the correct one."
+                            )
+                            state.requires_clarification = True
+                            return state
+
+                        arguments["commitment_id"] = verified_id
+                # Execute the tool after validation.
+                try:
+                    execute = getattr(
+                        self.tool_registry,
+                        "execute",
+                        None,
+                    )
+
+                    if callable(execute):
+                        result = await execute(
+                            tool_call.name,
+                            arguments,
+                        ) # type: ignore
+                    else:
+                        result = await self.tool_registry.dispatch(
+                            tool_call.name,
+                            arguments,
+                        )
+
                 except Exception as exc:
                     result = {
                         "success": False,
@@ -179,8 +1784,20 @@ class FamilyContextAgent:
                     }
                 )
 
-                # Send the tool result back to the AI so it can
-                # generate the final natural-language response.
+                if tool_call.name == "search_commitments":
+                    if isinstance(result, dict) and result.get("success", True):
+                        records = result.get("commitments", [])
+
+                        if isinstance(records, list):
+                            commitment_search_records = [
+                                item for item in records
+                                if isinstance(item, dict) and item.get("id") is not None
+                            ]
+                        else:
+                            commitment_search_records = None
+                    else:
+                        commitment_search_records = None
+
                 messages.append(
                     {
                         "role": "tool",
@@ -192,10 +1809,11 @@ class FamilyContextAgent:
                     }
                 )
 
-        # Safety fallback if the AI keeps requesting tools.
-        state.assistant_message = (
-            "I couldn't complete the request safely. "
-            "Please try again."
+        await _create_missing_prerequisite_links(state, self.tool_registry)
+        state.assistant_message = _summarize_successful_actions(state) or (
+            "I couldn't complete the request safely. Please try again."
         )
         return state
+
+
 FamilyContextOrchestrator = FamilyContextAgent

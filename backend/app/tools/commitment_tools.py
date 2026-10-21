@@ -1,4 +1,4 @@
-"""Controlled commitment tools exposed to the Family Context Agent.
+"""Controlled commitment tools exposed by the Family Context Agent.
 
 Business rules that belong to the agent's tool contract live here; persistence,
 scope checks, and exact-duplicate protection stay in ``CommitmentService``.
@@ -57,31 +57,71 @@ DATE_REQUIRED_TYPES = frozenset(
         CommitmentType.RENEWAL,
     }
 )
-TERMINAL_STATUSES = frozenset({CommitmentStatus.COMPLETED, CommitmentStatus.CANCELLED})
+
+
+TERMINAL_STATUSES = frozenset(
+    {
+        CommitmentStatus.COMPLETED,
+        CommitmentStatus.CANCELLED,
+    }
+)
+
 
 # Two active items of the same type this close together are probably the same
 # bill; next month's bill (about 30 days later) is a genuinely new item.
 DUPLICATE_WINDOW_DAYS = 7
-_FILLER_WORDS = frozenset({"the", "a", "an", "my", "our", "for", "of", "bill", "payment", "due"})
+
+
+_FILLER_WORDS = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "my",
+        "our",
+        "for",
+        "of",
+        "bill",
+        "payment",
+        "due",
+    }
+)
+
 
 # Fields the document's extraction may fill when the agent did not restate them.
-_DOCUMENT_FILLABLE_FIELDS = ("category", "description", "amount", "start_date", "due_date")
+_DOCUMENT_FILLABLE_FIELDS = (
+    "category",
+    "description",
+    "amount",
+    "start_date",
+    "due_date",
+)
 
 
 def _today() -> date:
     return today_in(get_settings().family_timezone)
 
 
+
 class CreateCommitmentInput(CommitmentCreate):
-    """``create_commitment`` arguments: the commitment plus agent-only controls."""
+    """create_commitment arguments plus agent-only confirmation controls."""
 
     confirmed_new: bool = Field(
         default=False,
         description=(
-            "Set true only after the user confirmed this is a separate item from the "
-            "similar commitments a previous call returned."
+            "Set true only after the user confirmed this is a separate item from "
+            "the similar commitments a previous call returned."
         ),
     )
+
+    confirmed_past_due_date: bool = Field(
+        default=False,
+        description=(
+            "Set true only after the user explicitly confirms saving a "
+            "commitment with a past due date."
+        ),
+    )
+
 
     @model_validator(mode="before")
     @classmethod
@@ -89,8 +129,16 @@ class CreateCommitmentInput(CommitmentCreate):
         # The real source (PDF or IMAGE) is taken from the stored document on
         # confirmation, so the model does not have to guess it.
         if isinstance(data, dict) and data.get("document_id"):
-            if data.get("source_type") in (None, SourceType.TEXT, SourceType.TEXT.value):
-                data = {**data, "source_type": SourceType.PDF.value}
+            if data.get("source_type") in (
+                None,
+                SourceType.TEXT,
+                SourceType.TEXT.value,
+            ):
+                data = {
+                    **data,
+                    "source_type": SourceType.PDF.value,
+                }
+
         return data
 
 
@@ -110,7 +158,9 @@ class SearchCommitmentsResult(SearchCommitmentsToolResult):
 
 class UpdateCommitmentResult(UpdateCommitmentToolResult):
     title: str
-    priority: Priority
+    priority: Priority | None
+    amount: Decimal | None
+    previous_amount: Decimal | None
     due_date: date | None
     previous_status: CommitmentStatus
     previous_due_date: date | None
@@ -123,24 +173,39 @@ def _title_words(title: str) -> set[str]:
     return (words - _FILLER_WORDS) or words
 
 
-def _is_similar(existing: Commitment, payload: CommitmentCreate) -> bool:
-    if existing.category and payload.category and existing.category != payload.category:
-        return False
-    if existing.due_date and payload.due_date:
-        if abs((existing.due_date - payload.due_date).days) > DUPLICATE_WINDOW_DAYS:
+def _is_similar(
+    existing: Commitment,
+    payload: CommitmentCreate,
+) -> bool:
+    if existing.category and payload.category:
+        if existing.category != payload.category:
             return False
-    existing_words, new_words = _title_words(existing.title), _title_words(payload.title)
-    # "Electricity Bill" vs "KSEB Electricity Bill": one title contains the other.
+
+    if existing.due_date and payload.due_date:
+        if abs(
+            (existing.due_date - payload.due_date).days
+        ) > DUPLICATE_WINDOW_DAYS:
+            return False
+
+    existing_words = _title_words(existing.title)
+    new_words = _title_words(payload.title)
+
+    # "Electricity Bill" vs "KSEB Electricity Bill":
+    # one title contains the other.
     return existing_words <= new_words or new_words <= existing_words
 
 
-def _differences(existing: Commitment, payload: CommitmentCreate) -> dict[str, dict[str, Any]]:
+def _differences(
+    existing: Commitment,
+    payload: CommitmentCreate,
+) -> dict[str, dict[str, Any]]:
     pairs = {
         "title": (existing.title, payload.title),
         "amount": (existing.amount, payload.amount),
         "due_date": (existing.due_date, payload.due_date),
         "category": (existing.category, payload.category),
     }
+
     return {
         field: {
             "existing": str(old) if old is not None else None,
@@ -151,64 +216,165 @@ def _differences(existing: Commitment, payload: CommitmentCreate) -> dict[str, d
     }
 
 
-def _describe_candidate(existing: Commitment, payload: CommitmentCreate) -> dict[str, Any]:
+def _describe_candidate(
+    existing: Commitment,
+    payload: CommitmentCreate,
+) -> dict[str, Any]:
     return {
         "commitment_id": str(existing.id),
         "title": existing.title,
-        "amount": str(existing.amount) if existing.amount is not None else None,
-        "due_date": existing.due_date.isoformat() if existing.due_date else None,
+        "amount": (
+            str(existing.amount)
+            if existing.amount is not None
+            else None
+        ),
+        "due_date": (
+            existing.due_date.isoformat()
+            if existing.due_date
+            else None
+        ),
         "status": existing.status,
         "differences": _differences(existing, payload),
     }
 
 
 async def _reject_similar_commitments(
-    service: CommitmentService, payload: CommitmentCreate
+    service: CommitmentService,
+    payload: CommitmentCreate,
 ) -> None:
     """Raise a clarification-ready duplicate error for near-matching active items."""
 
     existing = await service.search(
         SearchCommitmentsQuery(
-            family_id=payload.family_id, commitment_type=payload.commitment_type
+            family_id=payload.family_id,
+            commitment_type=payload.commitment_type,
         )
     )
+
     candidates = [
         _describe_candidate(item, payload)
         for item in existing
-        if item.status in ACTIVE_COMMITMENT_STATUSES and _is_similar(item, payload)
+        if (
+            item.status in ACTIVE_COMMITMENT_STATUSES
+            and _is_similar(item, payload)
+        )
     ]
+
     if not candidates:
         return
 
     error = DuplicateCommitmentError(candidates)
+
+    
+
     error.details["next_step"] = (
         "Ask the user whether this is the existing item. If they are correcting it, "
-        "use update_commitment on that commitment_id (due_date, priority, or status). "
-        "If it is a separate item, call create_commitment again with confirmed_new=true."
+        "use update_commitment on that commitment_id (title, amount, due_date, "
+        "priority, or status). If it is a separate item, ask the user to confirm "
+        "that it is a new commitment. After confirmation, call create_commitment "
+        "again with confirmed_new=true. Preserve all original commitment arguments, "
+        "especially title, commitment_type, due_date, amount, priority, and "
+        "description. If the user already confirmed saving a past due date, also "
+        "preserve confirmed_past_due_date=true. Never remove or replace the original "
+        "due_date unless the user explicitly changes it."
     )
     raise error
-
-
 def _require_due_date(payload: CommitmentCreate) -> None:
-    if payload.due_date is None and payload.commitment_type in DATE_REQUIRED_TYPES:
-        kind = payload.commitment_type.value.replace("_", " ").lower()
+    if (
+        payload.due_date is None
+        and payload.commitment_type in DATE_REQUIRED_TYPES
+    ):
         raise ToolInputValidationError(
-            f"A {kind} needs a due date. Ask the user when '{payload.title}' is due.",
-            details={"tool_name": "create_commitment", "missing_fields": ["due_date"]},
+            f"A due date is required for {payload.commitment_type.value}."
+        )
+    
+    def _reject_past_due_date(payload: CommitmentCreate) -> None:
+        """Prevent saving a date-bound commitment with a past due date."""
+
+        if (
+        payload.commitment_type in DATE_REQUIRED_TYPES
+        and payload.due_date is not None
+        and payload.due_date < _today()
+    ):
+                        
+                    raise ToolInputValidationError(
+            f"The due date {payload.due_date.isoformat()} is in the past. "
+            "Ask the user to confirm before registering this commitment.",
+            details={
+                "tool_name": "create_commitment",
+                "confirmation_required": True,
+                "due_date": payload.due_date.isoformat(),
+            },
+        )
+
+    if (
+        payload.due_date is None
+        and payload.commitment_type in DATE_REQUIRED_TYPES
+    ):
+        kind = payload.commitment_type.value.replace(
+            "_",
+            " ",
+        ).lower()
+
+        raise ToolInputValidationError(
+            f"A {kind} needs a due date. Ask the user when "
+            f"'{payload.title}' is due.",
+            details={
+                "tool_name": "create_commitment",
+                "missing_fields": ["due_date"],
+            },
         )
 
 
+def _reject_past_due_date(
+    payload: CreateCommitmentInput,
+) -> None:
+    """Reject past due dates unless explicitly confirmed."""
+    if (
+        not payload.confirmed_past_due_date
+        and payload.commitment_type in DATE_REQUIRED_TYPES
+        and payload.due_date is not None
+        and payload.due_date < _today()
+    ):
+        raise ToolInputValidationError(
+            f"The due date {payload.due_date.isoformat()} is in the past. "
+            "Confirmation is required before saving.",
+            details={
+                "tool_name": "create_commitment",
+                "confirmation_required": True,
+                "due_date": payload.due_date.isoformat(),
+            },
+        )
+
+
+
+
 async def _with_document_proposal(
-    documents: DocumentService, payload: CreateCommitmentInput
+    documents: DocumentService,
+    payload: CreateCommitmentInput,
 ) -> CreateCommitmentInput:
     """Fill fields the agent left empty from the extraction the user confirmed."""
 
-    document = await documents.get(payload.family_id, payload.document_id)  # type: ignore[arg-type]
+    if payload.document_id is None:
+        raise ToolInputValidationError(
+            "A document ID is required to read the uploaded document."
+        )
+
+    document = await documents.get(
+    payload.family_id,
+    payload.document_id,
+    )
+
     proposal = document.extracted_data or {}
     values = payload.model_dump()
+
     for field in _DOCUMENT_FILLABLE_FIELDS:
-        if values.get(field) is None and proposal.get(field) is not None:
+        if (
+            values.get(field) is None
+            and proposal.get(field) is not None
+        ):
             values[field] = proposal[field]
+
     return CreateCommitmentInput.model_validate(values)
 
 
@@ -217,47 +383,75 @@ async def create_commitment(
     payload: CreateCommitmentInput,
     documents: DocumentService | None = None,
 ) -> CreateCommitmentResult:
-    """Create one scoped commitment, from chat text or a confirmed document.
-
-    Likely duplicates are raised as ``DuplicateCommitmentError`` with candidates
-    and field differences so the agent can clarify or offer a correction instead
-    of silently creating another bill or appointment.
-    """
+    """Create one scoped commitment, from chat text or a confirmed document."""
 
     if payload.document_id is not None:
         if documents is None:
             raise ToolInputValidationError(
                 "Saving a commitment from an uploaded document is not available here; "
                 "ask the user to confirm it on the Documents page.",
-                details={"tool_name": "create_commitment", "document_id": str(payload.document_id)},
+                details={
+                    "tool_name": "create_commitment",
+                    "document_id": str(payload.document_id),
+                },
             )
-        payload = await _with_document_proposal(documents, payload)
 
+        payload = await _with_document_proposal(
+            documents,
+            payload,
+        )
+
+    # Validate chat and document commitments alike.
     _require_due_date(payload)
+    _reject_past_due_date(payload)
+
     if not payload.confirmed_new:
-        await _reject_similar_commitments(service, payload)
+        await _reject_similar_commitments(
+            service,
+            payload,
+        )
+
 
     if payload.document_id is not None and documents is not None:
         # Confirmation marks the document CONFIRMED in the same transaction.
         commitment = await documents.confirm(
             payload.document_id,
             DocumentConfirm.model_validate(
-                payload.model_dump(include=set(DocumentConfirm.model_fields))
+                payload.model_dump(
+                    include=set(DocumentConfirm.model_fields)
+                )
             ),
         )
+
         source = "the uploaded document"
+
     else:
         commitment = await service.create(
-            CommitmentCreate.model_validate(payload.model_dump(exclude={"confirmed_new"}))
-        )
+            
+CommitmentCreate.model_validate(
+    payload.model_dump(
+        exclude={"confirmed_new", "confirmed_past_due_date"}
+    )
+)
+
+            )
+        
+
         source = "chat"
 
-    due = f", due {commitment.due_date.isoformat()}" if commitment.due_date else ""
+    due = (
+        f", due {commitment.due_date.isoformat()}"
+        if commitment.due_date
+        else ""
+    )
+
     return CreateCommitmentResult(
         commitment_id=commitment.id,
         status=CommitmentStatus(commitment.status),
         title=commitment.title,
-        commitment_type=CommitmentType(commitment.commitment_type),
+        commitment_type=CommitmentType(
+            commitment.commitment_type
+        ),
         amount=commitment.amount,
         due_date=commitment.due_date,
         document_id=commitment.document_id,
@@ -265,100 +459,236 @@ async def create_commitment(
     )
 
 
+
 async def search_commitments(
-    service: CommitmentService, query: SearchCommitmentsQuery
+    service: CommitmentService,
+    query: SearchCommitmentsQuery,
 ) -> SearchCommitmentsResult:
     """Find commitments matching the agent's filters."""
 
-    results = [CommitmentRead.model_validate(c) for c in await service.search(query)]
+    commitments = await service.search(query)
+
+    if query.status is None:
+    # Ordinary searches show active commitments only.
+    # Explicit status searches can still retrieve historical records.
+        commitments = [
+            commitment
+            for commitment in commitments
+            if str(commitment.status) not in {
+                CommitmentStatus.COMPLETED.value,
+                CommitmentStatus.CANCELLED.value,
+            }
+        ]
+
+    results = [
+        CommitmentRead.model_validate(commitment)
+        for commitment in commitments
+    ]
+
     if not results:
-        message = "No matching commitments were found."
+        message = "No matching active commitments were found."
     elif len(results) == 1:
         message = "Found 1 matching commitment."
     else:
         message = (
-            f"Found {len(results)} matching commitments. If the user meant one of them, "
-            "ask which before changing anything."
+            f"Found {len(results)} matching commitments."
         )
-    return SearchCommitmentsResult(commitments=results, count=len(results), message=message)
+
+    return SearchCommitmentsResult(
+        commitments=results,
+        count=len(results),
+        message=message,
+    )
 
 
-def _check_status_change(current: CommitmentStatus, requested: CommitmentStatus) -> None:
+def _check_status_change(
+    current: CommitmentStatus,
+    requested: CommitmentStatus,
+) -> None:
     if requested == CommitmentStatus.OVERDUE:
-        # Overdue is derived from the due date by the priority engine.
-        raise InvalidStatusTransitionError(current.value, requested.value)
+        # Overdue is derived from the due date by the scheduled backend check.
+        raise InvalidStatusTransitionError(
+            current.value,
+            requested.value,
+        )
+
     if current in TERMINAL_STATUSES and requested != current:
-        raise InvalidStatusTransitionError(current.value, requested.value)
+        raise InvalidStatusTransitionError(
+            current.value,
+            requested.value,
+        )
+
 
 
 async def update_commitment(
-    service: CommitmentService, payload: CommitmentUpdate
+    service: CommitmentService,
+    payload: CommitmentUpdate,
 ) -> UpdateCommitmentResult:
-    """Complete, cancel, reprioritise, or reschedule an existing commitment."""
+    """Update an existing commitment."""
 
-    if payload.status is None and payload.priority is None and payload.due_date is None:
+    # Validate that at least one update field was provided.
+    if (
+        payload.title is None
+        and payload.status is None
+        and payload.amount is None
+        and payload.due_date is None
+    ):
         raise ToolInputValidationError(
-            "Nothing to update. Ask the user what should change: status, priority, or due date.",
-            details={"tool_name": "update_commitment", "missing_fields": ["status", "priority", "due_date"]},
+            "Nothing to update. Ask the user what should change: "
+            "title, amount, status, or due date.",
+            details={
+                "tool_name": "update_commitment",
+                "missing_fields": [
+                    "title",
+                    "status",
+                    "amount",
+                    "due_date",
+                ],
+            },
         )
 
-    current = await service.get(payload.family_id, payload.commitment_id)
+    current = await service.get(
+        payload.family_id,
+        payload.commitment_id,
+    )
+
     previous_status = CommitmentStatus(current.status)
+    previous_amount = current.amount
     previous_due_date = current.due_date
-    title = current.title
+    previous_title = current.title
+
+    terminal_change = (
+        (payload.title is not None and payload.title != current.title)
+        or (payload.status is not None and payload.status != previous_status)
+        or (payload.amount is not None and payload.amount != current.amount)
+        or (payload.due_date is not None and payload.due_date != current.due_date)
+    )
+    if previous_status in TERMINAL_STATUSES and terminal_change:
+        raise ConflictError(
+            f"'{previous_title}' is already {previous_status.value} and cannot be changed.",
+            details={"current_status": previous_status.value},
+        )
 
     if payload.status is not None:
-        _check_status_change(previous_status, payload.status)
+        _check_status_change(
+            previous_status,
+            payload.status,
+        )
 
-    rescheduled = payload.due_date is not None and payload.due_date != previous_due_date
+    # Detect an actual due-date change.
+    rescheduled = (
+        payload.due_date is not None
+        and payload.due_date != previous_due_date
+    )
+
     if rescheduled:
         if previous_status in TERMINAL_STATUSES:
             raise ConflictError(
-                f"'{title}' is already {previous_status.value} and cannot be rescheduled. "
-                "Create a new commitment if it is happening again.",
-                details={"current_status": previous_status.value},
-            )
-        if current.start_date and payload.due_date < current.start_date:  # type: ignore[operator]
-            raise ToolInputValidationError(
-                f"The new due date is before '{title}' starts on {current.start_date.isoformat()}.",
-                details={"tool_name": "update_commitment", "errors": ["due_date before start_date"]},
+                f"'{previous_title}' is already "
+                f"{previous_status.value} "
+                "and cannot be rescheduled. Create a new commitment "
+                "if it is happening again.",
+                details={
+                    "current_status": previous_status.value,
+                },
             )
 
+        if (
+        current.start_date is not None
+        and payload.due_date is not None
+        and payload.due_date < current.start_date):
+            raise ToolInputValidationError(
+                f"The new due date is before '{previous_title}' "
+                f"starts on {current.start_date.isoformat()}.",
+                details={
+                    "tool_name": "update_commitment",
+                    "errors": ["due_date before start_date"],
+                },
+            )
+
+    # Preserve the existing overdue-rescheduling behavior.
     status = payload.status
+
     if (
         status is None
         and rescheduled
         and previous_status == CommitmentStatus.OVERDUE
         and payload.due_date >= _today()  # type: ignore[operator]
     ):
-        status = CommitmentStatus.PENDING  # rescheduled into the future: no longer overdue
+        status = CommitmentStatus.PENDING
 
     changes: list[str] = []
+
+    # Title change detection.
+    if (
+        payload.title is not None
+        and payload.title != previous_title
+    ):
+        changes.append(
+            f"title '{previous_title}' -> '{payload.title}'"
+        )
+
+    # Status change detection.
     if status is not None and status != previous_status:
-        changes.append(f"status {previous_status.value} -> {status.value}")
-    if payload.priority is not None and payload.priority.value != current.priority:
-        changes.append(f"priority {current.priority} -> {payload.priority.value}")
+        changes.append(
+            f"status {previous_status.value} -> {status.value}"
+        )
+
+    # Amount change detection.
+    if (
+        payload.amount is not None
+        and payload.amount != current.amount
+    ):
+        changes.append(
+            f"amount ₹{current.amount} -> ₹{payload.amount}"
+        )
+
+    # Due-date change detection.
     if rescheduled:
-        old = previous_due_date.isoformat() if previous_due_date else "no date"
-        changes.append(f"due date {old} -> {payload.due_date.isoformat()}")  # type: ignore[union-attr]
+        old_date = (
+            previous_due_date.isoformat()
+            if previous_due_date
+            else "no date"
+        )
+
+        new_date = (payload.due_date.isoformat()
+        if payload.due_date is not None
+        else "no date")
+
+        changes.append(
+        f"due date {old_date} -> {new_date}")
 
     if changes:
-        commitment = await service.update(payload.model_copy(update={"status": status}))
+        # Preserve all supplied fields while applying any calculated status.
+        commitment = await service.update(
+            payload.model_copy(
+                update={"status": status}
+            )
+        )
     else:
-        commitment = current  # idempotent: e.g. "I paid it" for an already-completed bill
+        # No actual changes: avoid an unnecessary database update.
+        commitment = current
 
+    # Report the updated commitment and the changes made.
     return UpdateCommitmentResult(
         commitment_id=commitment.id,
         status=CommitmentStatus(commitment.status),
         title=commitment.title,
-        priority=Priority(commitment.priority),
+        priority=Priority(commitment.priority) if commitment.priority else None,
+        amount=commitment.amount,
+        previous_amount=previous_amount,
         due_date=commitment.due_date,
         previous_status=previous_status,
         previous_due_date=previous_due_date,
         changes=changes,
         message=(
-            f"Updated '{title}': " + "; ".join(changes) + "."
+            f"Updated '{commitment.title}': "
+            + "; ".join(changes)
+            + "."
             if changes
-            else f"'{title}' already had those values; nothing changed."
+            else (
+                f"'{previous_title}' already had those values; "
+                "nothing changed."
+            )
         ),
     )

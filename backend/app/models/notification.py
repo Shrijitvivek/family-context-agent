@@ -17,8 +17,6 @@ if TYPE_CHECKING:
 class Notification(Base):
     __tablename__ = "notifications"
     __table_args__ = (
-        Index("ix_notifications_family_id", "family_id"),
-        Index("ix_notifications_commitment_id", "commitment_id"),
         Index("ix_notifications_read", "family_id", "is_read"),
         Index(
             "ix_notifications_family_commitment_active",
