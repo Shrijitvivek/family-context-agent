@@ -49,7 +49,7 @@ class Settings(BaseSettings):
 
     @property
     def demo_scenario_dir(self) -> Path:
-        return ROOT_DIR / "synthetic_data" / "scenarios"
+        return Path(__file__).resolve().parents[2] / "synthetic_data" / "scenarios"
 
     @property
     def upload_path(self) -> Path:
