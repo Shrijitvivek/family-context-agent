@@ -159,7 +159,7 @@ async def test_chat_search_then_update_changes_same_unambiguous_commitment(monke
         ])
         await session.flush()
         try:
-            result = await ChatService(session).process_message(
+            result = await ChatService(session, today=date(2026, 10, 13)).process_message(
                 family_id=family_id, member_id=member_id, conversation_id=None,
                 message="I paid the electricity bill.",
             )
@@ -177,7 +177,7 @@ async def test_chat_search_then_update_changes_same_unambiguous_commitment(monke
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_chat_update_tool_does_not_enforce_ambiguity_after_multiple_matches(monkeypatch):
+async def test_chat_update_tool_asks_for_clarification_after_multiple_matches(monkeypatch):
     """Reproduce whether a tool caller can bypass the documented clarify-first rule."""
     import app.services.chat as chat_module
 
@@ -207,9 +207,15 @@ async def test_chat_update_tool_does_not_enforce_ambiguity_after_multiple_matche
             await session.refresh(october)
             await session.refresh(november)
             assert result.tool_results[0]["result"]["count"] == 2
-            # Current behavior: the subsequent update is accepted despite ambiguity.
-            assert october.status == CommitmentStatus.COMPLETED.value
+            assert result.requires_clarification is True
+            assert "multiple matching commitments" in result.assistant_message.casefold()
+
+            assert october.status == CommitmentStatus.PENDING.value
             assert november.status == CommitmentStatus.PENDING.value
+
+            assert [call["name"] for call in result.tool_calls] == [
+                "search_commitments"
+            ]
         finally:
             await _cleanup(session, [family_id])
 

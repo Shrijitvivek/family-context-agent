@@ -77,7 +77,7 @@ describe("critical dashboard journey UI contracts", () => {
     }).format(now).toUpperCase();
 
     expect(screen.getByText(currentDate)).toBeTruthy();
-    expect(screen.getByText("CBC test")).toBeTruthy();
+    expect(screen.queryByText("CBC test")).toBeNull();
     expect(screen.getByText("KSEB Electricity Bill")).toBeTruthy();
     expect(screen.queryByText("SUNDAY, 11 OCTOBER 2026")).toBeNull();
     expect(screen.queryByText("KSEB Electricity Bill is due tomorrow")).toBeNull();

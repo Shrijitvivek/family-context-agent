@@ -1,4 +1,3 @@
-
 from datetime import date
 from decimal import Decimal
 from uuid import uuid4
@@ -39,7 +38,7 @@ class FakeAIClient:
                             "title": "Electricity bill",
                             "amount": "3240.00",
                             "category": "utilities",
-                            "description": "Electricity bill due October 18",
+                            "description": "Electricity bill due October 25",
                             "status": "PENDING",
                             "priority": "HIGH",
                             "source_type": "TEXT",
@@ -81,7 +80,7 @@ async def test_electricity_bill_is_resolved_and_saved_in_postgres():
         registry = ToolRegistry(
             expense_service=expense_service,
             commitment_service=commitment_service,
-            priority_service=EmptyPriorityService(), # type: ignore[arg-type]
+            priority_service=EmptyPriorityService(),  # type: ignore[arg-type]
         )
 
         agent = FamilyContextAgent(
@@ -93,7 +92,7 @@ async def test_electricity_bill_is_resolved_and_saved_in_postgres():
             family_id=family_id,
             member_id=None,
             conversation_id=None,
-            user_message="Electricity bill ₹3,240 due October 18",
+            user_message="Electricity bill ₹3,240 due October 25",
         )
 
         result = await agent.run(state)
@@ -123,4 +122,4 @@ async def test_electricity_bill_is_resolved_and_saved_in_postgres():
         assert saved_commitment.title == "Electricity bill"
         assert saved_commitment.commitment_type == "BILL"
         assert saved_commitment.amount == Decimal("3240.00")
-        assert saved_commitment.due_date == date(2026, 10, 18)
+        assert saved_commitment.due_date == date(2026, 10, 25)

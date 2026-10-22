@@ -58,3 +58,37 @@ The Dockerfiles and `docker-compose.yml` are intentionally empty placeholders fo
 ## Implementation order
 
 Follow the design blueprint: database and APIs first, then frontend/backend integration, NVIDIA model client, controlled tools, dependencies and priorities, document processing, scheduled checks, judge scenarios, tests, deployment, and polish.
+
+## Judge Mode — Nair Family Demo
+
+Judge Mode provides a repeatable synthetic household for demonstrating the Family Context Agent without modifying real household data.
+
+### Demo Household
+
+- **Arun** — Father
+- **Meera** — Mother
+- **Lakshmi** — Grandmother
+- **Rahul** — College Student
+
+The scenario includes household expenses, utility bills, medical appointments, a college project deadline, home repairs, commitment dependencies, and completed tasks.
+
+### Load or Reset Demo Data
+
+Start the backend and open the Swagger UI at `/docs`.
+
+- `GET /demo/scenarios` — List available demo scenarios.
+- `POST /demo/reset` — Reset the Nair Family demo.
+- `POST /demo/scenarios/nair-family/load` — Load the Nair Family scenario.
+
+Resetting should affect only the deterministic demo household.
+
+### Demonstration Flow
+
+1. Load the Nair Family scenario.
+2. Review family members and household expenses.
+3. Ask the agent about pending commitments and upcoming deadlines.
+4. Explore dependencies between commitments.
+5. Create or update a commitment.
+6. Reset the demo to restore the original synthetic dataset.
+7. Review agent event logs to demonstrate observability.
+

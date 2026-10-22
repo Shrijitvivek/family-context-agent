@@ -47,8 +47,6 @@ from app.services.commitment import CommitmentService
 from app.services.document import DocumentService
 from app.utils.dates import today_in
 
-
-
 # Types that are meaningless without a date: ask instead of saving an undated bill.
 DATE_REQUIRED_TYPES = frozenset(
     {
@@ -104,8 +102,9 @@ def _today() -> date:
     return today_in(get_settings().family_timezone)
 
 
+
 class CreateCommitmentInput(CommitmentCreate):
-    """``create_commitment`` arguments: the commitment plus agent-only controls."""
+    """create_commitment arguments plus agent-only confirmation controls."""
 
     confirmed_new: bool = Field(
         default=False,
@@ -114,6 +113,15 @@ class CreateCommitmentInput(CommitmentCreate):
             "the similar commitments a previous call returned."
         ),
     )
+
+    confirmed_past_due_date: bool = Field(
+        default=False,
+        description=(
+            "Set true only after the user explicitly confirms saving a "
+            "commitment with a past due date."
+        ),
+    )
+
 
     @model_validator(mode="before")
     @classmethod
@@ -150,7 +158,7 @@ class SearchCommitmentsResult(SearchCommitmentsToolResult):
 
 class UpdateCommitmentResult(UpdateCommitmentToolResult):
     title: str
-    priority: Priority
+    priority: Priority | None
     amount: Decimal | None
     previous_amount: Decimal | None
     due_date: date | None
@@ -257,19 +265,48 @@ async def _reject_similar_commitments(
 
     error = DuplicateCommitmentError(candidates)
 
+    
+
     error.details["next_step"] = (
         "Ask the user whether this is the existing item. If they are correcting it, "
-        "use update_commitment on that commitment_id (amount, due_date, priority, "
-        "or status). If it is a separate item, call create_commitment again with "
-        "confirmed_new=true."
+        "use update_commitment on that commitment_id (title, amount, due_date, "
+        "priority, or status). If it is a separate item, ask the user to confirm "
+        "that it is a new commitment. After confirmation, call create_commitment "
+        "again with confirmed_new=true. Preserve all original commitment arguments, "
+        "especially title, commitment_type, due_date, amount, priority, and "
+        "description. If the user already confirmed saving a past due date, also "
+        "preserve confirmed_past_due_date=true. Never remove or replace the original "
+        "due_date unless the user explicitly changes it."
     )
-
     raise error
+def _require_due_date(payload: CommitmentCreate) -> None:
+    if (
+        payload.due_date is None
+        and payload.commitment_type in DATE_REQUIRED_TYPES
+    ):
+        raise ToolInputValidationError(
+            f"A due date is required for {payload.commitment_type.value}."
+        )
+    
+    def _reject_past_due_date(payload: CommitmentCreate) -> None:
+        """Prevent saving a date-bound commitment with a past due date."""
 
+        if (
+        payload.commitment_type in DATE_REQUIRED_TYPES
+        and payload.due_date is not None
+        and payload.due_date < _today()
+    ):
+                        
+                    raise ToolInputValidationError(
+            f"The due date {payload.due_date.isoformat()} is in the past. "
+            "Ask the user to confirm before registering this commitment.",
+            details={
+                "tool_name": "create_commitment",
+                "confirmation_required": True,
+                "due_date": payload.due_date.isoformat(),
+            },
+        )
 
-def _require_due_date(
-    payload: CommitmentCreate,
-) -> None:
     if (
         payload.due_date is None
         and payload.commitment_type in DATE_REQUIRED_TYPES
@@ -287,6 +324,29 @@ def _require_due_date(
                 "missing_fields": ["due_date"],
             },
         )
+
+
+def _reject_past_due_date(
+    payload: CreateCommitmentInput,
+) -> None:
+    """Reject past due dates unless explicitly confirmed."""
+    if (
+        not payload.confirmed_past_due_date
+        and payload.commitment_type in DATE_REQUIRED_TYPES
+        and payload.due_date is not None
+        and payload.due_date < _today()
+    ):
+        raise ToolInputValidationError(
+            f"The due date {payload.due_date.isoformat()} is in the past. "
+            "Confirmation is required before saving.",
+            details={
+                "tool_name": "create_commitment",
+                "confirmation_required": True,
+                "due_date": payload.due_date.isoformat(),
+            },
+        )
+
+
 
 
 async def _with_document_proposal(
@@ -341,13 +401,16 @@ async def create_commitment(
             payload,
         )
 
+    # Validate chat and document commitments alike.
     _require_due_date(payload)
+    _reject_past_due_date(payload)
 
     if not payload.confirmed_new:
         await _reject_similar_commitments(
             service,
             payload,
         )
+
 
     if payload.document_id is not None and documents is not None:
         # Confirmation marks the document CONFIRMED in the same transaction.
@@ -364,12 +427,15 @@ async def create_commitment(
 
     else:
         commitment = await service.create(
-            CommitmentCreate.model_validate(
-                payload.model_dump(
-                    exclude={"confirmed_new"}
-                )
+            
+CommitmentCreate.model_validate(
+    payload.model_dump(
+        exclude={"confirmed_new", "confirmed_past_due_date"}
+    )
+)
+
             )
-        )
+        
 
         source = "chat"
 
@@ -393,27 +459,39 @@ async def create_commitment(
     )
 
 
+
 async def search_commitments(
     service: CommitmentService,
     query: SearchCommitmentsQuery,
 ) -> SearchCommitmentsResult:
     """Find commitments matching the agent's filters."""
 
+    commitments = await service.search(query)
+
+    if query.status is None:
+    # Ordinary searches show active commitments only.
+    # Explicit status searches can still retrieve historical records.
+        commitments = [
+            commitment
+            for commitment in commitments
+            if str(commitment.status) not in {
+                CommitmentStatus.COMPLETED.value,
+                CommitmentStatus.CANCELLED.value,
+            }
+        ]
+
     results = [
-        CommitmentRead.model_validate(c)
-        for c in await service.search(query)
+        CommitmentRead.model_validate(commitment)
+        for commitment in commitments
     ]
 
     if not results:
-        message = "No matching commitments were found."
-
+        message = "No matching active commitments were found."
     elif len(results) == 1:
         message = "Found 1 matching commitment."
-
     else:
         message = (
-            f"Found {len(results)} matching commitments. "
-            "If the user meant one of them, ask which before changing anything."
+            f"Found {len(results)} matching commitments."
         )
 
     return SearchCommitmentsResult(
@@ -428,7 +506,7 @@ def _check_status_change(
     requested: CommitmentStatus,
 ) -> None:
     if requested == CommitmentStatus.OVERDUE:
-        # Overdue is derived from the due date by the priority engine.
+        # Overdue is derived from the due date by the scheduled backend check.
         raise InvalidStatusTransitionError(
             current.value,
             requested.value,
@@ -452,19 +530,17 @@ async def update_commitment(
     if (
         payload.title is None
         and payload.status is None
-        and payload.priority is None
         and payload.amount is None
         and payload.due_date is None
     ):
         raise ToolInputValidationError(
             "Nothing to update. Ask the user what should change: "
-            "title, amount, status, priority, or due date.",
+            "title, amount, status, or due date.",
             details={
                 "tool_name": "update_commitment",
                 "missing_fields": [
                     "title",
                     "status",
-                    "priority",
                     "amount",
                     "due_date",
                 ],
@@ -480,6 +556,18 @@ async def update_commitment(
     previous_amount = current.amount
     previous_due_date = current.due_date
     previous_title = current.title
+
+    terminal_change = (
+        (payload.title is not None and payload.title != current.title)
+        or (payload.status is not None and payload.status != previous_status)
+        or (payload.amount is not None and payload.amount != current.amount)
+        or (payload.due_date is not None and payload.due_date != current.due_date)
+    )
+    if previous_status in TERMINAL_STATUSES and terminal_change:
+        raise ConflictError(
+            f"'{previous_title}' is already {previous_status.value} and cannot be changed.",
+            details={"current_status": previous_status.value},
+        )
 
     if payload.status is not None:
         _check_status_change(
@@ -546,15 +634,6 @@ async def update_commitment(
             f"status {previous_status.value} -> {status.value}"
         )
 
-    # Priority change detection.
-    if (
-        payload.priority is not None
-        and payload.priority.value != current.priority
-    ):
-        changes.append(
-            f"priority {current.priority} -> {payload.priority.value}"
-        )
-
     # Amount change detection.
     if (
         payload.amount is not None
@@ -595,7 +674,7 @@ async def update_commitment(
         commitment_id=commitment.id,
         status=CommitmentStatus(commitment.status),
         title=commitment.title,
-        priority=Priority(commitment.priority),
+        priority=Priority(commitment.priority) if commitment.priority else None,
         amount=commitment.amount,
         previous_amount=previous_amount,
         due_date=commitment.due_date,

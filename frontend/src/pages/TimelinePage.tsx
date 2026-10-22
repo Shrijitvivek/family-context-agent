@@ -225,22 +225,27 @@ function IconTile({
 const filters: Array<"all" | CommitmentStatus> = [
   "all",
   "pending",
+  "scheduled",
+  "in_progress",
   "completed",
   "overdue",
+  "cancelled",
 ];
 
 const statusStyles: Record<CommitmentStatus, string> = {
   pending: "bg-amber-100 text-amber-700",
+  scheduled: "bg-slate-100 text-slate-700",
+  in_progress: "bg-blue-100 text-blue-700",
   completed: "bg-emerald-100 text-emerald-700",
   overdue: "bg-rose-100 text-rose-700",
   cancelled: "bg-slate-100 text-slate-700",
 };
 
-const priorityStyles: Record<Commitment["priority"], string> = {
+const priorityStyles: Record<Exclude<Commitment["priority"], null>, string> = {
   low: "bg-slate-100 text-slate-700",
   medium: "bg-blue-100 text-blue-700",
   high: "bg-amber-100 text-amber-700",
-  urgent: "bg-rose-100 text-rose-700",
+  critical: "bg-rose-100 text-rose-700",
 };
 
 function formatDate(value: string) {
@@ -256,7 +261,9 @@ function formatDate(value: string) {
 }
 
 function formatStatus(value: string) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
+  return value
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function EmptyState({
@@ -364,8 +371,11 @@ export default function TimelinePage() {
     () => ({
       all: memberItems.length,
       pending: memberItems.filter((item) => item.status === "pending").length,
+      scheduled: memberItems.filter((item) => item.status === "scheduled").length,
+      in_progress: memberItems.filter((item) => item.status === "in_progress").length,
       completed: memberItems.filter((item) => item.status === "completed").length,
       overdue: memberItems.filter((item) => item.status === "overdue").length,
+      cancelled: memberItems.filter((item) => item.status === "cancelled").length,
     }),
     [memberItems],
   );
@@ -624,11 +634,13 @@ export default function TimelinePage() {
 
                   {/* Priority */}
                   <div className="hidden md:block">
-                    <span
-                      className={`inline-flex rounded-md px-2.5 py-0.5 text-[10px] font-semibold ${priorityStyles[item.priority]}`}
-                    >
-                      {formatStatus(item.priority)}
-                    </span>
+                    {item.priority && (
+                      <span
+                        className={`inline-flex rounded-md px-2.5 py-0.5 text-[10px] font-semibold ${priorityStyles[item.priority]}`}
+                      >
+                        {formatStatus(item.priority)}
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}

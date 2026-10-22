@@ -30,7 +30,7 @@ class CommitmentContext(BaseModel):
     title: str
     commitment_type: str | None
     status: str
-    priority: str
+    priority: str | None
     due_date: date | None
     member_id: UUID | None
 

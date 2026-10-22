@@ -52,7 +52,7 @@ class CommitmentCreate(BaseModel):
     start_date: date | None = None
     due_date: date | None = None
     status: CommitmentStatus = CommitmentStatus.PENDING
-    priority: Priority = Priority.MEDIUM
+    priority: Priority | None = None
     source_type: SourceType = SourceType.TEXT
     document_id: UUID | None = None
 
@@ -116,7 +116,7 @@ class CommitmentRead(BaseModel):
     due_date: date | None
 
     status: CommitmentStatus
-    priority: Priority
+    priority: Priority | None
 
     source_type: SourceType
     document_id: UUID | None
@@ -182,8 +182,6 @@ class CommitmentUpdate(BaseModel):
 
     status: CommitmentStatus | None = None
 
-    priority: Priority | None = None
-
     amount: Decimal | None = Field(
         default=None,
         gt=0,
@@ -201,8 +199,6 @@ class CommitmentUpdateRequest(BaseModel):
     family_id: UUID
 
     status: CommitmentStatus | None = None
-
-    priority: Priority | None = None
 
     amount: Decimal | None = Field(
         default=None,

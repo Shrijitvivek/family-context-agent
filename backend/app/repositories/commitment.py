@@ -1,9 +1,10 @@
 """Database access used by commitment creation and duplicate detection."""
 
+import re
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import case, func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import ACTIVE_COMMITMENT_STATUSES, CommitmentType
@@ -20,6 +21,13 @@ from app.schemas.commitment import (
     GetFamilyPrioritiesQuery,
     SearchCommitmentsQuery,
 )
+
+
+_TITLE_QUERY_STOP_WORDS = {
+    "a", "an", "and", "as", "at", "before", "complete", "completed",
+    "do", "done", "for", "from", "i", "it", "mark", "my", "of", "on",
+    "please", "set", "the", "to", "update", "with",
+}
 
 
 class CommitmentRepository:
@@ -122,6 +130,27 @@ class CommitmentRepository:
     ) -> list[Commitment]:
         """Search commitments based on provided filters."""
 
+        title_terms = (
+            [
+                token
+                for token in re.findall(r"[a-z0-9]+", query.title_query.casefold())
+                if token not in _TITLE_QUERY_STOP_WORDS
+            ]
+            if query.title_query is not None
+            else []
+        )
+        title_filter = (
+            and_(
+                *(Commitment.title.ilike(f"%{term}%") for term in title_terms)
+            )
+            if title_terms
+            else (
+                Commitment.title.ilike(f"%{query.title_query}%")
+                if query.title_query is not None
+                else None
+            )
+        )
+
         conditions = build_filters(
             Commitment.family_id == query.family_id,
             (
@@ -154,11 +183,7 @@ class CommitmentRepository:
                 if query.due_after is not None
                 else None
             ),
-            (
-                Commitment.title.ilike(f"%{query.title_query}%")
-                if query.title_query is not None
-                else None
-            ),
+            title_filter,
         )
 
         statement = (
@@ -194,9 +219,7 @@ class CommitmentRepository:
 
             if payload.status.value in ("COMPLETED", "CANCELLED"):
                 commitment.completed_at = func.now()
-
-        if payload.priority is not None:
-            commitment.priority = payload.priority.value
+                commitment.priority = None
 
         if payload.amount is not None:
             commitment.amount = payload.amount

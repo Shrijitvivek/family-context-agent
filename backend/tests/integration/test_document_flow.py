@@ -43,7 +43,7 @@ class ScriptedBillExtractor:
             "category": "ELECTRICITY",
             "description": "Monthly electricity bill",
             "amount": "3240.00",
-            "due_date": "2026-10-18",
+            "due_date": "2026-10-28",
             "confidence": 0.99,
             "missing_fields": [],
         }
@@ -142,7 +142,7 @@ async def test_document_upload_extraction_confirmation_creates_linked_commitment
                 assert uploaded["document_type"] == "BILL"
                 assert uploaded["extracted_data"]["title"] == "KSEB Electricity Bill"
                 assert uploaded["extracted_data"]["amount"] == "3240.00"
-                assert uploaded["extracted_data"]["due_date"] == "2026-10-18"
+                assert uploaded["extracted_data"]["due_date"] == "2026-10-28"
                 assert len(model.calls) == 1
                 assert model.calls[0][0][-1]["content"][1]["type"] == "image_url"
 
@@ -163,7 +163,7 @@ async def test_document_upload_extraction_confirmation_creates_linked_commitment
                         "category": "ELECTRICITY",
                         "description": "Monthly electricity bill",
                         "amount": "3240.00",
-                        "due_date": "2026-10-18",
+                        "due_date": "2026-10-28",
                         "priority": "MEDIUM",
                     },
                 )
@@ -182,7 +182,7 @@ async def test_document_upload_extraction_confirmation_creates_linked_commitment
             assert commitment.commitment_type == "BILL"
             assert commitment.category == "ELECTRICITY"
             assert commitment.amount == Decimal("3240.00")
-            assert commitment.due_date == date(2026, 10, 18)
+            assert commitment.due_date == date(2026, 10, 28)
             assert commitment.status == "PENDING"
             assert commitment.family_id == family_id
             assert commitment.member_id == member_id

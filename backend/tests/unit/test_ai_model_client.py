@@ -293,3 +293,27 @@ async def test_ai_model_client_rejects_malformed_tool_arguments():
                     }
                 ]
             )
+
+@pytest.mark.asyncio
+async def test_ai_model_client_rejects_invalid_model_response():
+    client = AIModelClient.__new__(AIModelClient)
+    client.api_key = "test-key"
+    client.base_url = "https://example.com/v1"
+    client.model = "test-model"
+
+    request = httpx.Request(
+        "POST", "https://example.com/v1/chat/completions"
+    )
+    response = httpx.Response(
+        200,
+        json={"unexpected": "invalid response"},
+        request=request,
+    )
+
+    with patch("app.clients.ai_model.httpx.AsyncClient") as mock_client:
+        mock_http = AsyncMock()
+        mock_http.post.return_value = response
+        mock_client.return_value.__aenter__.return_value = mock_http
+
+        with pytest.raises(AIModelError, match="choices"):
+            await client.chat(messages=[{"role": "user", "content": "Hello"}])

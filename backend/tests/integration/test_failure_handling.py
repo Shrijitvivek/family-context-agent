@@ -7,7 +7,8 @@ from uuid import uuid4
 import httpx
 import pytest
 from sqlalchemy import delete, func, select
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError , OperationalError
+
 
 from app.agents.state import AgentState
 from app.api.dependencies import get_db
@@ -157,6 +158,7 @@ async def test_api_persistence_failures_rollback_expense_commitment_create_and_u
                 assert "controlled update commit detail" not in failed_update.text
                 async with AsyncSessionLocal() as verify:
                     unchanged = await verify.get(Commitment, commitment_id)
+                    assert unchanged is not None
                     assert unchanged.status == CommitmentStatus.PENDING.value
                     assert unchanged.amount == Decimal("100.00")
                     assert unchanged.due_date == date(2026, 10, 20)
@@ -170,6 +172,7 @@ async def test_api_persistence_failures_rollback_expense_commitment_create_and_u
                 assert retried_update.json()["status"] == "COMPLETED"
                 async with AsyncSessionLocal() as verify:
                     updated = await verify.get(Commitment, commitment_id)
+                    assert updated is not None
                     assert updated.amount == Decimal("250.00")
                     assert updated.due_date == date(2026, 10, 28)
                     assert await verify.scalar(select(func.count(Commitment.id)).where(Commitment.family_id == family_id)) == 1
@@ -214,7 +217,9 @@ async def test_chat_can_return_success_claim_after_real_expense_tool_persistence
                 })
             assert response.status_code == 200
             payload = response.json()
-            assert "recorded successfully" in payload["message"]
+            assert "couldn't confirm" in payload["message"].lower()
+            assert "saved" in payload["message"].lower()
+            assert "recorded successfully" not in payload["message"].lower()
             assert payload["tool_results"][0]["result"]["success"] is False
             assert await _count(Expense, family_id) == 0
         finally:
@@ -304,3 +309,46 @@ async def test_background_database_failure_rolls_back_failed_family_and_processe
                 assert await verify.scalar(select(func.count(Notification.id)).where(Notification.family_id == healthy_family)) == 1
         finally:
             await _cleanup(session, [failed_family, healthy_family])
+
+@pytest.mark.asyncio
+async def test_database_connection_failure_is_handled_safely(monkeypatch):
+    from sqlalchemy.exc import OperationalError
+
+    from app.repositories.expense import ExpenseRepository
+
+    async def fail_scope(*args, **kwargs):
+        raise OperationalError(
+            "SELECT 1", {}, Exception("database unavailable")
+        )
+
+    monkeypatch.setattr(ExpenseRepository, "assert_scope", fail_scope)
+
+    family_id, member_id = uuid4(), uuid4()
+    previous_overrides = dict(app.dependency_overrides)
+    app.dependency_overrides[get_db] = _db_override
+
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/api/v1/expenses",
+                json={
+                    "family_id": str(family_id),
+                    "member_id": str(member_id),
+                    "amount": "45.00",
+                    "category": "FOOD",
+                    "expense_date": "2026-10-20",
+                },
+            )
+
+        assert response.status_code >= 400
+        assert "database unavailable" not in response.text
+        assert "recorded successfully" not in response.text.casefold()
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous_overrides)
+
+    # Check the service's existing constructor and database usage
+    # before adapting this test to its actual implementation.

@@ -8,7 +8,7 @@ interface BackendTimelineCommitment {
   description?: string | null;
   due_date?: string | null;
   status: string;
-  priority: string;
+  priority: string | null;
   member_id?: string | null;
 }
 
@@ -44,14 +44,14 @@ export async function getTimeline(
       dueDate: item.due_date ?? day.day,
       status: item.status.toLowerCase() as
         | "pending"
+        | "scheduled"
+        | "in_progress"
         | "completed"
         | "overdue"
         | "cancelled",
-      priority: item.priority.toLowerCase() as
-        | "low"
-        | "medium"
-        | "high"
-        | "urgent",
+      priority: item.priority
+        ? (item.priority.toLowerCase() as "low" | "medium" | "high" | "critical")
+        : null,
       memberId: item.member_id ?? null,
       familyMember: null,
     })),
