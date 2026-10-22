@@ -9,6 +9,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
+COPY synthetic_data ./synthetic_data
 COPY alembic.ini .
 COPY alembic ./alembic
 
