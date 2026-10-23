@@ -24,7 +24,10 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_service_role_key: str = ""
 
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = (
+        "http://localhost:5173,"
+        "https://family-context-agent-frontend.vercel.app"
+    )
     family_timezone: str = "Asia/Kolkata"
     demo_family_name: str = "Nair Family"
 

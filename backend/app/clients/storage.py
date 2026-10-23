@@ -67,10 +67,24 @@ class SupabaseStorage:
         self, family_id: UUID, extension: str, content: bytes
     ) -> str:
         key = f"{family_id}/{uuid4().hex}{extension}"
+        content_types = {
+            ".pdf": "application/pdf",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".png": "image/png",
+        }
+        content_type = content_types.get(extension.lower())
+
+        if content_type is None:
+            raise ValueError("Unsupported document file type.")
+
         self._client.storage.from_(self._bucket).upload(
             path=key,
             file=content,
-            file_options={"upsert": "false"},
+            file_options={
+                "content-type": content_type,
+                "upsert": "false",
+            },
         )
         return key
 
