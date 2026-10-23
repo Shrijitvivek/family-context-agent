@@ -42,7 +42,7 @@ export function FamilyProvider({ children }: FamilyProviderProps) {
   const [families, setFamilies] = useState<Family[]>([]);
   const [selectedFamilyId, setSelectedFamilyIdState] =
     useState<string | null>(() => {
-      return localStorage.getItem("selectedFamilyId");
+      return localStorage.getItem("selected_family_id");
   });
 
   const [members, setMembers] = useState<FamilyMember[]>([]);
