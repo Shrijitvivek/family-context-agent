@@ -12,3 +12,4 @@ apscheduler>=3.10,<4.0
 pypdf>=5.0,<7.0
 pillow>=10.0,<13.0
 tenacity>=8.5,<10.0
+supabase

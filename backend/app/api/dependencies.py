@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.orchestrator import FamilyContextAgent
 from app.clients.ai_model import AIModelClient
-from app.clients.storage import LocalStorage
+from app.clients.storage import LocalStorage , SupabaseStorage
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.repositories.commitment import CommitmentRepository
@@ -78,7 +78,7 @@ async def get_document_service(
         commitment_service=CommitmentService(
             CommitmentRepository(session)
         ),
-        storage=LocalStorage(),
+        storage=SupabaseStorage(),
         model=AIModelClient(),
         allowed_types=settings.allowed_upload_type_set,
         max_bytes=settings.max_upload_size_mb * 1024 * 1024,

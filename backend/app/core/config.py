@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     )
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/family_context"
+    supabase_url: str = ""
+    supabase_service_role_key: str = ""
 
     cors_origins: str = "http://localhost:5173"
     family_timezone: str = "Asia/Kolkata"
