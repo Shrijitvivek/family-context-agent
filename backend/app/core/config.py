@@ -21,8 +21,13 @@ class Settings(BaseSettings):
     )
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/family_context"
+    supabase_url: str = ""
+    supabase_service_role_key: str = ""
 
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = (
+        "http://localhost:5173,"
+        "https://family-context-agent-frontend.vercel.app"
+    )
     family_timezone: str = "Asia/Kolkata"
     demo_family_name: str = "Nair Family"
 
@@ -49,7 +54,7 @@ class Settings(BaseSettings):
 
     @property
     def demo_scenario_dir(self) -> Path:
-        return ROOT_DIR / "synthetic_data" / "scenarios"
+        return Path(__file__).resolve().parents[2] / "synthetic_data" / "scenarios"
 
     @property
     def upload_path(self) -> Path:

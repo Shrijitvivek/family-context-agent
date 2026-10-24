@@ -35,25 +35,76 @@ Backend modules are intentionally implementation-free. Each Python file contains
 6. `create_dependency`
 7. `get_family_priorities`
 
-## Environment setup
+## Environment Setup
 
-The checked-in `.env.example` documents every expected variable. The local `.env` contains development placeholders and is ignored by Git. Students must add a real Nebius API key locally and must never commit it.
+### Prerequisites
 
-```powershell
-Copy-Item .env.example .env
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r backend\requirements-dev.txt
+- Docker Engine
+- Docker Compose v2 (`docker compose`)
+- A valid Nebius API key
+- Git, if cloning the repository
+
+### Configure Environment Variables
+
+From the project root, create your local environment file:
+
+```bash
+cp .env.example .env
 ```
 
-Frontend dependencies can be prepared independently:
+Edit `.env` and set your actual `NEBIUS_API_KEY`. Verify `NVIDIA_MODEL_NAME` and `NEBIUS_BASE_URL` match the model and endpoint available to your Nebius account.
 
-```powershell
-Set-Location frontend
-npm install
+Do not commit `.env` or expose API keys in logs, screenshots, or shared terminal output.
+
+### Start the Application with Docker
+
+Run this command from the project root:
+
+```bash
+docker compose up --build
 ```
 
-The Dockerfiles and `docker-compose.yml` are intentionally empty placeholders for the deployment workstream.
+Docker Compose builds the frontend and backend images, starts PostgreSQL, waits for the database health check, runs database migrations, and starts the backend API. The frontend starts after the backend passes its health check.
+
+To run the services in the background:
+
+```bash
+docker compose up --build -d
+```
+
+### Access the Application
+
+- **Frontend:** http://localhost:5173
+- **Backend API:** http://localhost:8000
+- **Swagger API documentation:** http://localhost:8000/docs
+- **Backend health:** http://localhost:8000/health
+- **Frontend API proxy health:** http://localhost:5173/api/v1/health
+
+### Verify and Manage Services
+
+Check service status:
+
+```bash
+docker compose ps
+```
+
+View backend logs:
+
+```bash
+docker compose logs --tail=100 backend
+```
+
+Stop the services:
+
+```bash
+docker compose down
+```
+
+The PostgreSQL database and uploaded documents use named Docker volumes. Stopping services with `docker compose down` preserves these volumes. Avoid `docker compose down -v` unless you intentionally want to delete them.
+
+### Local Development Without Docker
+
+For local development, configure the environment variables for your local PostgreSQL instance and follow the backend and frontend development instructions maintained by the project. The Docker-specific database hostname `db` is intended for containers on the Compose network; a locally running backend normally connects through `localhost`.
 
 ## Implementation order
 
