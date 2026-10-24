@@ -3,6 +3,8 @@
  *
  * Provides the main navigation links for the Family Context application.
  * Updated with optimized compact sizing and clean line heights.
+ * Supports an optional `onNavigate` callback so the parent can auto-close
+ * the mobile menu after a link is clicked.
  */
 
 import { NavLink } from "react-router-dom";
@@ -29,7 +31,12 @@ const utilityItems = [
   { name: "Judge Mode", path: "/demo", icon: FlaskConical, description: "Load a demo family scenario" },
 ];
 
-export default function Navigation() {
+type NavigationProps = {
+  /** Called after a link is clicked, so the parent can close the mobile menu. */
+  onNavigate?: () => void;
+};
+
+export default function Navigation({ onNavigate }: NavigationProps) {
   return (
     <nav
       aria-label="Main navigation"
@@ -52,6 +59,7 @@ export default function Navigation() {
               end={path === "/"}
               title={description}
               aria-label={name}
+              onClick={onNavigate}
               className={({ isActive }) =>
                 [
                   "group relative flex min-h-9 items-center gap-2.5 rounded-xl px-3 py-2",
@@ -119,6 +127,7 @@ export default function Navigation() {
               key={path}
               to={path}
               title={description}
+              onClick={onNavigate}
               className={({ isActive }) =>
                 [
                   "group relative flex min-h-9 items-center gap-2.5 rounded-xl px-3 py-2",
