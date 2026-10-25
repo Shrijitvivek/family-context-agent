@@ -767,18 +767,6 @@ export default function HomePage() {
         <Surface className="p-5">
           <SectionHeading icon="activity" tone="violet" title="Quick actions" />
           <div className="mt-4 grid grid-cols-2 gap-3">
-            <button type="button" onClick={() => navigate("/timeline")} className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-100 bg-slate-50 hover:bg-slate-100 transition text-center">
-              <Icon name="calendar" size={20} className="text-violet-600 mb-1.5" />
-              <span className="text-xs font-semibold text-slate-800">
-                Add commitment
-              </span>
-            </button>
-            <button type="button" onClick={() => navigate("/expenses")} className="flex flex-col items-center justify-center p-4 rounded-xl border border-emerald-100 bg-emerald-50/50 hover:bg-emerald-100/50 transition text-center">
-              <Icon name="wallet" size={20} className="text-emerald-600 mb-1.5" />
-              <span className="text-xs font-semibold text-slate-800">
-                Add expense
-              </span>
-            </button>
             <button type="button" onClick={() => navigate("/documents")} className="flex flex-col items-center justify-center p-4 rounded-xl border border-blue-100 bg-blue-50/50 hover:bg-blue-100/50 transition text-center">
               <Icon name="upload" size={20} className="text-blue-600 mb-1.5" />
               <span className="text-xs font-semibold text-slate-800">

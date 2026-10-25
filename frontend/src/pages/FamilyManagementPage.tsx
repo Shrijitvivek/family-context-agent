@@ -18,7 +18,6 @@ export default function FamilyManagementPage() {
   } = useFamily();
 
   const [familyName, setFamilyName] = useState("");
-  const [timezone, setTimezone] = useState("Asia/Kolkata");
 
   const [memberName, setMemberName] = useState("");
   const [relationship, setRelationship] = useState("OTHER");
@@ -75,7 +74,6 @@ export default function FamilyManagementPage() {
     try {
       const family = await createFamily({
         name: familyName.trim(),
-        timezone: timezone.trim(),
       });
 
       addFamilyToContext(family);
@@ -170,23 +168,9 @@ export default function FamilyManagementPage() {
             />
           </div>
 
-          <div>
-            <label htmlFor="family-timezone" className="mb-1 block text-sm font-medium">
-              Timezone
-            </label>
-            <input
-              id="family-timezone"
-              required
-              maxLength={50}
-              value={timezone}
-              onChange={(event) => setTimezone(event.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2"
-            />
-          </div>
-
           <button
             type="submit"
-            disabled={saving || !familyName.trim() || !timezone.trim()}
+            disabled={saving || !familyName.trim()}
             className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
           >
             {saving ? "Saving..." : "Create family"}
