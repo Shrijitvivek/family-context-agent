@@ -17,6 +17,7 @@ import {
   FlaskConical,
   ChevronRight,
   Sparkles,
+  Users,
 } from "lucide-react";
 
 const navigationItems = [
@@ -25,6 +26,12 @@ const navigationItems = [
   { name: "Timeline", path: "/timeline", icon: Clock3, description: "Family commitments and events" },
   { name: "Expenses", path: "/expenses", icon: Receipt, description: "Household spending" },
   { name: "Documents", path: "/documents", icon: FileText, description: "Family documents" },
+  {
+  name: "Family Management",
+  path: "/families",
+  icon: Users,
+  description: "Create families and manage members",
+},
 ];
 
 const utilityItems = [

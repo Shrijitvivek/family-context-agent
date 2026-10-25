@@ -18,6 +18,7 @@ import ExpensesPage from "./pages/ExpensesPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import DemoPage from "./pages/DemoPage";
 import NotFoundPage from "./pages/NotFoundPage";
+import FamilyManagementPage from "./pages/FamilyManagementPage";
 import { FamilyProvider } from "./context/FamilyContext";
 
 export default function App() {
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="/documents" element={<DocumentsPage />} />
           <Route path="/demo" element={<DemoPage />} />
           <Route path="*" element={<NotFoundPage />} />
+          <Route path="/families"element={<FamilyManagementPage />}/>
         </Routes>
       </AppShell>
     </FamilyProvider>

@@ -9,6 +9,7 @@ from app.models.family import Family
 from app.models.family_member import FamilyMember
 from app.repositories.family import FamilyRepository
 from app.schemas.family import (
+    FamilyCreate,
     FamilyDetail,
     FamilyMemberCreate,
     FamilyMemberRead,
@@ -22,6 +23,22 @@ class FamilyService:
 
     async def list_families(self) -> list[Family]:
         return await self._repository.list_families()
+
+    async def create_family(self, payload: FamilyCreate) -> Family:
+        family = Family(
+            name=payload.name,
+            timezone=payload.timezone,
+        )
+
+        try:
+            family = await self._repository.add_family(family)
+            await self._repository.commit()
+            await self._repository.refresh(family)
+        except SQLAlchemyError as exc:
+            await self._repository.rollback()
+            raise PersistenceError("create the family") from exc
+
+        return family
 
     async def get_detail(self, family_id: UUID) -> FamilyDetail:
         """Load the household and the active members the agent can refer to."""

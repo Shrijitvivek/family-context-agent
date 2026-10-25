@@ -21,6 +21,13 @@ class FamilyRepository:
         statement = select(Family).order_by(Family.created_at.asc())
         return list((await self._session.scalars(statement)).all())
 
+    async def add_family(self, family: Family) -> Family:
+        self._session.add(family)
+        await self._session.flush()
+        await self._session.refresh(family)
+        return family
+    
+
     async def get_family(self, family_id: UUID) -> Family:
         family = await self._session.get(Family, family_id)
         if family is None:
@@ -64,3 +71,4 @@ class FamilyRepository:
 
     async def rollback(self) -> None:
         await self._session.rollback()
+

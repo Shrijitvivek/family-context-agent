@@ -71,7 +71,7 @@ export default function AppShell({ children }: AppShellProps) {
 
               <span className="min-w-0">
                 <span className="block text-base font-bold tracking-tight text-slate-900">
-                  Family Context
+                  Famora AI
                 </span>
                 <span className="mt-0.5 block text-[11px] text-slate-500">
                   Your family, in sync
