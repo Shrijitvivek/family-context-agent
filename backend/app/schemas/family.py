@@ -12,6 +12,24 @@ def _strip_required(value: str) -> str:
         raise ValueError("value cannot be blank")
     return value
 
+class FamilyCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=150)
+    timezone: str = Field(
+        default="Asia/Kolkata",
+        min_length=1,
+        max_length=50,
+    )
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        return _strip_required(value)
+
+    @field_validator("timezone")
+    @classmethod
+    def strip_timezone(cls, value: str) -> str:
+        return _strip_required(value)
+
 
 class FamilyMemberCreate(BaseModel):
     name: str = Field(min_length=1, max_length=150)

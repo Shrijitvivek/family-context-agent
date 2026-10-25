@@ -3,9 +3,12 @@
  *
  * Shared responsive application layout for Family Context.
  * Updated to match the refined minimalist design system while retaining full family & member selection.
+ * The mobile menu closes automatically after a navigation link is clicked
+ * or the route changes.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { Menu, X, House, Heart, ChevronDown, Users, User } from "lucide-react";
 
 import Navigation from "./Navigation";
@@ -17,6 +20,7 @@ interface AppShellProps {
 
 export default function AppShell({ children }: AppShellProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const location = useLocation();
 
   const {
     families,
@@ -28,6 +32,12 @@ export default function AppShell({ children }: AppShellProps) {
   } = useFamily();
 
   const activeMembers = members.filter((member) => member.is_active);
+
+  // Close the mobile menu automatically whenever the route changes,
+  // so the new page is shown directly.
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
 
   const handleFamilyChange = (familyId: string) => {
     setSelectedFamilyId(familyId);
@@ -61,7 +71,7 @@ export default function AppShell({ children }: AppShellProps) {
 
               <span className="min-w-0">
                 <span className="block text-base font-bold tracking-tight text-slate-900">
-                  Family Context
+                  Famora AI
                 </span>
                 <span className="mt-0.5 block text-[11px] text-slate-500">
                   Your family, in sync
@@ -283,7 +293,8 @@ export default function AppShell({ children }: AppShellProps) {
             </div>
           )}
 
-          <Navigation />
+          {/* Closes the drawer on any link click, even for the current page */}
+          <Navigation onNavigate={() => setMobileMenuOpen(false)} />
 
           <button
             type="button"

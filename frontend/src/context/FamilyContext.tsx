@@ -23,6 +23,8 @@ interface FamilyContextValue {
   selectedMemberId: string | null;
   setSelectedMemberId: (memberId: string | null) => void;
 
+  addFamilyToContext: (family: Family) => void;
+
   loading: boolean;
   error: string | null;
 }
@@ -52,10 +54,23 @@ export function FamilyProvider({ children }: FamilyProviderProps) {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
   const handleSetSelectedFamilyId = (familyId: string) => {
     setSelectedFamilyIdState(familyId);
     localStorage.setItem("selected_family_id", familyId);
+    setSelectedMemberId(null);
+  };
+
+  const handleAddFamilyToContext = (family: Family) => {
+    setFamilies((current) => {
+      if (current.some((item) => item.id === family.id)) {
+        return current;
+      }
+
+      return [...current, family];
+    });
+
+    handleSetSelectedFamilyId(family.id);
+    setSelectedMemberId(null);
   };
 
   useEffect(() => {
@@ -166,6 +181,7 @@ export function FamilyProvider({ children }: FamilyProviderProps) {
         members,
         selectedMemberId,
         setSelectedMemberId: handleSetSelectedMemberId,
+        addFamilyToContext: handleAddFamilyToContext,
         loading,
         error,
       }}

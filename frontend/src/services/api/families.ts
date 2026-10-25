@@ -32,3 +32,41 @@ export const getFamilyMembers = async (
   );
   return response.data;
 };
+
+
+export interface FamilyCreatePayload {
+  name: string;
+  timezone?: string;
+}
+
+export interface FamilyMemberCreatePayload {
+  name: string;
+  relationship_type: string;
+  display_role?: string | null;
+}
+
+export const createFamily = async (
+  payload: FamilyCreatePayload,
+): Promise<Family> => {
+  const response = await apiClient.post<Family>(
+    "/families",
+    {
+      name: payload.name,
+      timezone: payload.timezone ?? "Asia/Kolkata",
+    },
+  );
+
+  return response.data;
+};
+
+export const addFamilyMember = async (
+  familyId: string,
+  payload: FamilyMemberCreatePayload,
+): Promise<FamilyMember> => {
+  const response = await apiClient.post<FamilyMember>(
+    `/families/${familyId}/members`,
+    payload,
+  );
+
+  return response.data;
+};
