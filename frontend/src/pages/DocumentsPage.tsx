@@ -630,10 +630,19 @@ export default function DocumentsPage() {
               </h3>
 
               {selectedDocument.extracted_data &&
-              Object.keys(selectedDocument.extracted_data).length > 0 ? (
+              Object.entries(selectedDocument.extracted_data).some(
+                ([key]) =>
+                  !["confidence", "missing_fields"].includes(key.toLowerCase()),
+              ) ? (
                 <div className="max-h-64 space-y-3 overflow-y-auto">
-                  {Object.entries(selectedDocument.extracted_data).map(
-                    ([key, value]) => (
+                  {Object.entries(selectedDocument.extracted_data)
+                    .filter(
+                      ([key]) =>
+                        !["confidence", "missing_fields"].includes(
+                          key.toLowerCase(),
+                        ),
+                    )
+                    .map(([key, value]) => (
                       <div key={key}>
                         <p className="text-xs font-medium text-slate-500">
                           {key

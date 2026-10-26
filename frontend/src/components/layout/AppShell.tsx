@@ -134,7 +134,7 @@ export default function AppShell({ children }: AppShellProps) {
                         }
                         className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-2 pl-3 pr-8 text-xs font-semibold text-slate-900 shadow-xs transition hover:border-slate-300 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
                       >
-                        <option value="">All Family</option>
+                        <option value="">Select member (optional)</option>
 
                         {activeMembers.map((member) => (
                           <option key={member.id} value={member.id}>
@@ -275,7 +275,7 @@ export default function AppShell({ children }: AppShellProps) {
                       }
                       className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-2.5 pl-3 pr-9 text-xs font-semibold text-slate-900 shadow-xs outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                     >
-                      <option value="">All Family</option>
+                      <option value="">Select member (optional)</option>
 
                       {activeMembers.map((member) => (
                         <option key={member.id} value={member.id}>
