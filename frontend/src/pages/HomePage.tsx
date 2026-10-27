@@ -527,61 +527,84 @@ export default function HomePage() {
       try {
         const familyId = selectedFamilyId!;
 
-        const [
-          commitments,
-          summary,
-          expenses,
-          documents,
-          priorityItems,
-          timeline,
-        ] = await Promise.all([
+        console.log("Dashboard member:", selectedMemberId);
+
+        const results = await Promise.allSettled([
           getUpcomingCommitments(familyId, selectedMemberId),
-
           getExpenseSummary(familyId, selectedMemberId),
-
           getExpenses(familyId, selectedMemberId),
-
           getDocuments(familyId, selectedMemberId),
-
           getPriorities(familyId),
-
           getTimeline(familyId),
         ]);
 
         if (cancelled) return;
 
-        const visibleCommitments = selectedMemberId
-          ? commitments.filter(
-              (item) =>
-                item.member_id === selectedMemberId || item.member_id == null,
-            )
-          : commitments;
+        const [
+          commitmentsResult,
+          summaryResult,
+          expensesResult,
+          documentsResult,
+          prioritiesResult,
+          timelineResult,
+        ] = results;
 
-        const visibleExpenses = selectedMemberId
-          ? expenses.filter(
-              (expense) =>
-                expense.member_id === selectedMemberId ||
-                expense.member_id == null,
-            )
-          : expenses;
+        if (commitmentsResult.status === "fulfilled") {
+          const commitments = commitmentsResult.value;
+          const visibleCommitments = selectedMemberId
+            ? commitments.filter(
+                (item: Commitment) =>
+                  item.member_id === selectedMemberId || item.member_id == null,
+              )
+            : commitments;
+          setUpcomingItems(visibleCommitments);
+        }
 
-        setUpcomingItems(visibleCommitments);
+        if (summaryResult.status === "fulfilled") {
+          setExpenseTotal(Number(summaryResult.value.total));
+        }
 
-        // Home-page tasks are personal: exclude unassigned/shared family commitments.
+        if (expensesResult.status === "fulfilled") {
+          const expenses = expensesResult.value;
+          setRecentExpenses(
+            (selectedMemberId
+              ? expenses.filter(
+                  (expense: Expense) =>
+                    expense.member_id === selectedMemberId ||
+                    expense.member_id == null,
+                )
+              : expenses
+            ).slice(0, 3),
+          );
+        }
 
-        const personalTimelineItems = selectedMemberId
-          ? timeline.items.filter((item) => item.memberId === selectedMemberId)
-          : timeline.items.filter((item) => item.memberId != null);
+        if (documentsResult.status === "fulfilled") {
+          setDocumentCount(documentsResult.value.length);
+        }
 
-        setTimelineItems(personalTimelineItems);
+        if (prioritiesResult.status === "fulfilled") {
+          setPriorities(prioritiesResult.value);
+        }
 
-        setExpenseTotal(Number(summary.total));
+        if (timelineResult.status === "fulfilled") {
+          const timeline = timelineResult.value;
+          setTimelineItems(
+            selectedMemberId
+              ? timeline.items.filter(
+                  (item: TimelineCommitment) =>
+                    item.memberId === selectedMemberId,
+                )
+              : timeline.items.filter(
+                  (item: TimelineCommitment) => item.memberId != null,
+                ),
+          );
+        }
 
-        setRecentExpenses(visibleExpenses.slice(0, 3));
-
-        setDocumentCount(documents.length);
-
-        setPriorities(priorityItems);
+        const failed = results.filter((result) => result.status === "rejected");
+        failed.forEach((result) => {
+          if (result.status === "rejected")
+            console.error("Dashboard request failed:", result.reason);
+        });
       } catch (err) {
         if (cancelled) return;
 

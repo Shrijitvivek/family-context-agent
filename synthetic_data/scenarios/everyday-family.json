@@ -1,0 +1,135 @@
+{
+  "id": "everyday-family",
+  "title": "Everyday Family",
+  "description": "Household bills, groceries, shared responsibilities, and routine expenses.",
+  "family": {
+    "name": "The Taylor Family",
+    "timezone": "Asia/Kolkata"
+  },
+  "members": [
+    {
+      "key": "alex",
+      "name": "Alex",
+      "relationship_type": "FATHER",
+      "display_role": "Parent"
+    },
+    {
+      "key": "jordan",
+      "name": "Jordan",
+      "relationship_type": "MOTHER",
+      "display_role": "Parent"
+    },
+    {
+      "key": "sam",
+      "name": "Sam",
+      "relationship_type": "CHILD",
+      "display_role": "School Student"
+    },
+    {
+      "key": "casey",
+      "name": "Casey",
+      "relationship_type": "GRANDMOTHER",
+      "display_role": "Grandparent"
+    }
+  ],
+  "commitments": [
+    {
+      "key": "electricity",
+      "member": "alex",
+      "commitment_type": "BILL",
+      "category": "UTILITIES",
+      "title": "Electricity Bill",
+      "description": "Pay this month's electricity bill.",
+      "amount": "2340.00",
+      "due_in_days": 2,
+      "status": "PENDING"
+    },
+    {
+      "key": "internet",
+      "member": "jordan",
+      "commitment_type": "BILL",
+      "category": "UTILITIES",
+      "title": "Internet Renewal",
+      "description": "Renew the home internet plan.",
+      "amount": "999.00",
+      "due_in_days": 4,
+      "status": "PENDING"
+    },
+    {
+      "key": "groceries",
+      "member": "jordan",
+      "commitment_type": "TASK",
+      "category": "HOUSEHOLD",
+      "title": "Weekly Groceries",
+      "description": "Buy groceries for the household.",
+      "due_in_days": 1,
+      "status": "PENDING"
+    },
+    {
+      "key": "school-fee",
+      "member": "sam",
+      "commitment_type": "BILL",
+      "category": "EDUCATION",
+      "title": "School Activity Fee",
+      "description": "Pay the school activity fee.",
+      "amount": "850.00",
+      "due_in_days": 5,
+      "status": "PENDING"
+    },
+    {
+      "key": "water-filter",
+      "member": "alex",
+      "commitment_type": "TASK",
+      "category": "HOME",
+      "title": "Replace Water Filter",
+      "description": "Replace the kitchen water filter cartridge.",
+      "due_in_days": -1,
+      "status": "COMPLETED"
+    },
+    {
+      "key": "clinic",
+      "member": "casey",
+      "commitment_type": "APPOINTMENT",
+      "category": "HEALTH",
+      "title": "Routine Health Check",
+      "description": "Attend the routine health check.",
+      "due_in_days": 3,
+      "status": "PENDING"
+    }
+  ],
+  "dependencies": [],
+  "expenses": [
+    {
+      "member": "jordan",
+      "amount": "1860.00",
+      "category": "GROCERIES",
+      "merchant": "Fresh Basket",
+      "description": "Weekly groceries",
+      "days_ago": 1
+    },
+    {
+      "member": "alex",
+      "amount": "2340.00",
+      "category": "UTILITIES",
+      "merchant": "Electricity Board",
+      "description": "Previous electricity bill",
+      "days_ago": 10
+    },
+    {
+      "member": "sam",
+      "amount": "420.00",
+      "category": "EDUCATION",
+      "merchant": "School Supplies Store",
+      "description": "Notebooks and stationery",
+      "days_ago": 4
+    },
+    {
+      "member": "casey",
+      "amount": "560.00",
+      "category": "HEALTH",
+      "merchant": "Community Pharmacy",
+      "description": "Routine medicines",
+      "days_ago": 2
+    }
+  ]
+}

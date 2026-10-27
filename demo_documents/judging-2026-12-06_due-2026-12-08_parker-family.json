@@ -1,0 +1,148 @@
+{
+  "id": "family-care",
+  "title": "Family Care",
+  "description": "Medical appointments, follow-up tasks, caregiving expenses, and a test-to-review dependency.",
+  "family": {
+    "name": "The Parker Family",
+    "timezone": "Asia/Kolkata"
+  },
+  "members": [
+    {
+      "key": "taylor",
+      "name": "Taylor",
+      "relationship_type": "FATHER",
+      "display_role": "Care Coordinator"
+    },
+    {
+      "key": "avery",
+      "name": "Avery",
+      "relationship_type": "MOTHER",
+      "display_role": "Family Member"
+    },
+    {
+      "key": "robin",
+      "name": "Robin",
+      "relationship_type": "GRANDMOTHER",
+      "display_role": "Grandparent"
+    },
+    {
+      "key": "quinn",
+      "name": "Quinn",
+      "relationship_type": "CHILD",
+      "display_role": "Family Member"
+    }
+  ],
+  "commitments": [
+    {
+      "key": "blood-test",
+      "member": "robin",
+      "commitment_type": "APPOINTMENT",
+      "category": "HEALTH",
+      "title": "Blood Test",
+      "description": "Attend the scheduled blood test.",
+      "due_in_days": 2,
+      "status": "PENDING"
+    },
+    {
+      "key": "doctor-review",
+      "member": "taylor",
+      "commitment_type": "APPOINTMENT",
+      "category": "HEALTH",
+      "title": "Doctor Review",
+      "description": "Review the test results with the doctor after the blood test is completed.",
+      "due_in_days": 2,
+      "status": "PENDING"
+    },
+    {
+      "key": "medicine",
+      "member": "avery",
+      "commitment_type": "TASK",
+      "category": "HEALTH",
+      "title": "Collect Prescription Medicines",
+      "description": "Collect prescribed medicines from the pharmacy.",
+      "due_in_days": 2,
+      "status": "PENDING"
+    },
+    {
+      "key": "insurance-claim",
+      "member": "taylor",
+      "commitment_type": "TASK",
+      "category": "FINANCE",
+      "title": "Submit Medical Insurance Claim",
+      "description": "Collect receipts and submit the medical claim.",
+      "due_in_days": 2,
+      "status": "IN_PROGRESS"
+    },
+    {
+      "key": "followup-call",
+      "member": "quinn",
+      "commitment_type": "TASK",
+      "category": "HEALTH",
+      "title": "Confirm Follow-up Appointment",
+      "description": "Call the clinic to confirm the follow-up appointment.",
+      "due_in_days": 2,
+      "status": "PENDING"
+    },
+    {
+      "key": "clinic-visit",
+      "member": "robin",
+      "commitment_type": "APPOINTMENT",
+      "category": "HEALTH",
+      "title": "Routine Clinic Visit",
+      "description": "Attend the routine clinic visit.",
+      "due_in_days": 2,
+      "status": "COMPLETED"
+    },
+    {
+      "key": "pharmacy-bill",
+      "member": null,
+      "commitment_type": "BILL",
+      "category": "HEALTH",
+      "title": "Pharmacy Reimbursement",
+      "description": "Shared family pharmacy reimbursement record.",
+      "amount": "1450.00",
+      "due_in_days": 2,
+      "status": "PENDING"
+    }
+  ],
+  "dependencies": [
+    {
+      "source": "blood-test",
+      "target": "doctor-review"
+    }
+  ],
+  "expenses": [
+    {
+      "member": "robin",
+      "amount": "1250.00",
+      "category": "HEALTH",
+      "merchant": "Community Clinic",
+      "description": "Consultation and tests",
+      "days_ago": 2
+    },
+    {
+      "member": "avery",
+      "amount": "780.00",
+      "category": "HEALTH",
+      "merchant": "City Pharmacy",
+      "description": "Prescription medicines",
+      "days_ago": 1
+    },
+    {
+      "member": "taylor",
+      "amount": "2400.00",
+      "category": "HEALTH",
+      "merchant": "Diagnostic Centre",
+      "description": "Diagnostic tests",
+      "days_ago": 5
+    },
+    {
+      "member": "quinn",
+      "amount": "450.00",
+      "category": "TRANSPORT",
+      "merchant": "Local Cab",
+      "description": "Transport to clinic",
+      "days_ago": 3
+    }
+  ]
+}

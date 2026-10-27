@@ -1,0 +1,149 @@
+{
+  "id": "busy-household",
+  "title": "Busy Household",
+  "description": "Work, school and college deadlines with personal tasks and time-sensitive commitments.",
+  "family": {
+    "name": "The Morgan Family",
+    "timezone": "Asia/Kolkata"
+  },
+  "members": [
+    {
+      "key": "chris",
+      "name": "Chris",
+      "relationship_type": "FATHER",
+      "display_role": "Working Parent"
+    },
+    {
+      "key": "morgan",
+      "name": "Morgan",
+      "relationship_type": "MOTHER",
+      "display_role": "Working Parent"
+    },
+    {
+      "key": "riley",
+      "name": "Riley",
+      "relationship_type": "CHILD",
+      "display_role": "College Student"
+    },
+    {
+      "key": "jamie",
+      "name": "Jamie",
+      "relationship_type": "CHILD",
+      "display_role": "School Student"
+    }
+  ],
+  "commitments": [
+    {
+      "key": "report",
+      "member": "chris",
+      "commitment_type": "TASK",
+      "category": "WORK",
+      "title": "Submit Monthly Report",
+      "description": "Send the monthly status report to the team.",
+      "due_in_days": 2,
+      "status": "PENDING"
+    },
+    {
+      "key": "presentation",
+      "member": "morgan",
+      "commitment_type": "TASK",
+      "category": "WORK",
+      "title": "Prepare Client Presentation",
+      "description": "Finish slides before the client meeting.",
+      "due_in_days": 2,
+      "status": "IN_PROGRESS"
+    },
+    {
+      "key": "project",
+      "member": "riley",
+      "commitment_type": "TASK",
+      "category": "EDUCATION",
+      "title": "College Project Submission",
+      "description": "Submit the final project report.",
+      "due_in_days": 2,
+      "status": "PENDING"
+    },
+    {
+      "key": "exam",
+      "member": "jamie",
+      "commitment_type": "TASK",
+      "category": "EDUCATION",
+      "title": "Exam Preparation",
+      "description": "Revise the chapters for the upcoming exam.",
+      "due_in_days": 2,
+      "status": "IN_PROGRESS"
+    },
+    {
+      "key": "insurance",
+      "member": "chris",
+      "commitment_type": "BILL",
+      "category": "FINANCE",
+      "title": "Vehicle Insurance Renewal",
+      "description": "Renew vehicle insurance before expiry.",
+      "amount": "6800.00",
+      "due_in_days": 2,
+      "status": "PENDING"
+    },
+    {
+      "key": "groceries",
+      "member": "morgan",
+      "commitment_type": "TASK",
+      "category": "HOUSEHOLD",
+      "title": "Order Weekly Groceries",
+      "description": "Place the weekly grocery order.",
+      "due_in_days": 2,
+      "status": "COMPLETED"
+    },
+    {
+      "key": "internet",
+      "member": null,
+      "commitment_type": "BILL",
+      "category": "UTILITIES",
+      "title": "Home Internet Bill",
+      "description": "Shared household internet bill.",
+      "amount": "1199.00",
+      "due_in_days": 2,
+      "status": "PENDING"
+    }
+  ],
+  "dependencies": [
+    {
+      "source": "presentation",
+      "target": "report"
+    }
+  ],
+  "expenses": [
+    {
+      "member": "chris",
+      "amount": "1350.00",
+      "category": "TRANSPORT",
+      "merchant": "Public Transit",
+      "description": "Commute expenses",
+      "days_ago": 1
+    },
+    {
+      "member": "morgan",
+      "amount": "2200.00",
+      "category": "GROCERIES",
+      "merchant": "Daily Market",
+      "description": "Household supplies",
+      "days_ago": 2
+    },
+    {
+      "member": "riley",
+      "amount": "950.00",
+      "category": "EDUCATION",
+      "merchant": "Campus Bookshop",
+      "description": "Project materials",
+      "days_ago": 3
+    },
+    {
+      "member": "jamie",
+      "amount": "360.00",
+      "category": "EDUCATION",
+      "merchant": "Stationery Store",
+      "description": "School stationery",
+      "days_ago": 5
+    }
+  ]
+}

@@ -31,7 +31,7 @@ export const getPriorities = async (
 export const getUpcomingCommitments = async (
   familyId: string,
   memberId?: string | null,
-): Promise<Commitment[]> => {
+) => {
   const response = await apiClient.get("/commitments", {
     params: {
       family_id: familyId,
@@ -39,5 +39,5 @@ export const getUpcomingCommitments = async (
     },
   });
 
-  return response.data.commitments ?? response.data;
+  return response.data;
 };

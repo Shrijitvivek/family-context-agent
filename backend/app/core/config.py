@@ -26,7 +26,8 @@ class Settings(BaseSettings):
 
     cors_origins: str = (
         "http://localhost:5173,"
-        "https://famora-ai.vercel.app"
+        "https://famora-ai.vercel.app,"
+        "http://localhost:5174/"
     )
     family_timezone: str = "Asia/Kolkata"
     demo_family_name: str = "Nair Family"

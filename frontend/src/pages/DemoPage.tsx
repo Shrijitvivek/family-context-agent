@@ -76,18 +76,6 @@ export default function DemoPage() {
             </p>
           </div>
         </div>
-
-        <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3 text-[11px] font-medium text-slate-500">
-          <ArrowRight
-            size={13}
-            className="shrink-0 text-slate-700"
-            aria-hidden="true"
-          />
-          <span>
-            Once loaded, you'll immediately return to the main dashboard with
-            your selected scenario active.
-          </span>
-        </div>
       </section>
 
       {/* Scenario Selector */}
