@@ -242,8 +242,6 @@ Scenario JSON is loaded from `backend/synthetic_data/scenarios/`. The current ch
 
 Demo documents are intended to live in the repository-root **`demo_documents/`** folder. Use PDF, JPG/JPEG, or PNG files. In the Documents page, upload a file for the selected household, review its processing status and proposed fields, and confirm the proposal before creating a commitment. You can then ask a chat question about the document and compare the answer with the source.
 
-**Repository note:** On the inspected `main` branch, `demo_documents/` contains only `.gitkeep`. Add the final approved demo PDFs/images there if they are not present in your checkout; the folder path is the designated location for those assets.
-
 Example chat prompts (results depend on the loaded data):
 
 - “What needs our attention this week?”
@@ -309,7 +307,3 @@ For live request/response schemas, run the backend and open http://localhost:800
 - Demo scenarios and uploaded documents are for demonstration; do not use sample data as real family records.
 - Before using real household data in a public deployment, review authentication/authorization, HTTPS, secret management, backups, monitoring, access policies, and storage persistence.
 - This hackathon project is not a substitute for qualified medical, legal, or financial advice.
-
-## License
-
-No root-level `LICENSE` file was present on the inspected `main` branch. Until a license is selected and its full text is added to `LICENSE`, do not describe the repository as having an open-source license. Add the intended license file and update this section accordingly.
