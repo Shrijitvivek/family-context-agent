@@ -26,6 +26,7 @@ import {
 } from "../services/api/documents";
 
 import { useFamily } from "../context/FamilyContext";
+import { formatDate } from "../utils/date";
 
 type IconName =
   | "calendar"
@@ -618,7 +619,7 @@ export default function DocumentsPage() {
                 <span className="text-slate-500">Uploaded on</span>
                 <span className="text-right text-slate-900">
                   {selectedDocument.created_at
-                    ? new Date(selectedDocument.created_at).toLocaleDateString()
+                    ? formatDate(selectedDocument.created_at)
                     : "Not available"}
                 </span>
               </div>
@@ -657,8 +658,7 @@ export default function DocumentsPage() {
                               : String(value)}
                         </p>
                       </div>
-                    ),
-                  )}
+                    ))}
                 </div>
               ) : (
                 <p className="text-sm text-slate-500">

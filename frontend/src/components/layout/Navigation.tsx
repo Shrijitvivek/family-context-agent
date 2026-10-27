@@ -35,7 +35,7 @@ const navigationItems = [
 ];
 
 const utilityItems = [
-  { name: "Judge Mode", path: "/demo", icon: FlaskConical, description: "Load a demo family scenario" },
+  { name: "Demo Playground", path: "/demo", icon: FlaskConical, description: "Explore Famora AI with sample family data" },
 ];
 
 type NavigationProps = {

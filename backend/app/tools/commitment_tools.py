@@ -279,34 +279,9 @@ async def _reject_similar_commitments(
         "due_date unless the user explicitly changes it."
     )
     raise error
+
+
 def _require_due_date(payload: CommitmentCreate) -> None:
-    if (
-        payload.due_date is None
-        and payload.commitment_type in DATE_REQUIRED_TYPES
-    ):
-        raise ToolInputValidationError(
-            f"A due date is required for {payload.commitment_type.value}."
-        )
-    
-    def _reject_past_due_date(payload: CommitmentCreate) -> None:
-        """Prevent saving a date-bound commitment with a past due date."""
-
-        if (
-        payload.commitment_type in DATE_REQUIRED_TYPES
-        and payload.due_date is not None
-        and payload.due_date < _today()
-    ):
-                        
-                    raise ToolInputValidationError(
-            f"The due date {payload.due_date.isoformat()} is in the past. "
-            "Ask the user to confirm before registering this commitment.",
-            details={
-                "tool_name": "create_commitment",
-                "confirmation_required": True,
-                "due_date": payload.due_date.isoformat(),
-            },
-        )
-
     if (
         payload.due_date is None
         and payload.commitment_type in DATE_REQUIRED_TYPES

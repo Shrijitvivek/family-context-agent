@@ -16,6 +16,7 @@ import {
   type Expense,
 } from "../services/api/expenses";
 import { useFamily } from "../context/FamilyContext";
+import { formatDate } from "../utils/date";
 
 type IconName =
   | "calendar"
@@ -224,11 +225,7 @@ function IconTile({
 }
 
 export default function ExpensesPage() {
-  const {
-    selectedFamilyId,
-    selectedMemberId,
-    members,
-  } = useFamily();
+  const { selectedFamilyId, selectedMemberId, members } = useFamily();
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [total, setTotal] = useState(0);
@@ -279,7 +276,7 @@ export default function ExpensesPage() {
           visibleExpenses.map((expense) => ({
             ...expense,
             family_member: expense.member_id
-              ? memberNamesById.get(expense.member_id) ?? undefined
+              ? (memberNamesById.get(expense.member_id) ?? undefined)
               : undefined,
           })),
         );
@@ -312,13 +309,6 @@ export default function ExpensesPage() {
     currency: "INR",
     maximumFractionDigits: 2,
   });
-
-  const formatDate = (date: string, includeYear = true) =>
-    new Date(date).toLocaleDateString("en-IN", {
-      day: "numeric",
-      month: "short",
-      ...(includeYear ? { year: "numeric" } : {}),
-    });
 
   return (
     <main className="mx-auto w-full max-w-[1600px] space-y-5 pb-8 sm:space-y-6 font-sans">
@@ -492,8 +482,10 @@ export default function ExpensesPage() {
                       {currency.format(item.amount)}
                     </span>
                     <div className="flex items-center justify-end gap-2 text-[11px] text-slate-500 sm:hidden mt-0.5">
-                      <span>{formatDate(item.date, false)}</span>
-                      {item.family_member && <span>· {item.family_member}</span>}
+                      <span>{formatDate(item.date)}</span>
+                      {item.family_member && (
+                        <span>· {item.family_member}</span>
+                      )}
                     </div>
                   </div>
                 </div>

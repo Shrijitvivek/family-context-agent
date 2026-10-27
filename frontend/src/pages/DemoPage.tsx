@@ -32,12 +32,12 @@ export default function DemoPage() {
           <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-3 py-1">
             <Sparkles aria-hidden="true" size={13} className="text-slate-700" />
             <span className="text-xs font-semibold text-slate-800">
-              Judge Mode
+              Demo Playground
             </span>
           </div>
 
           <h1 className="text-2xl font-bold tracking-[-0.04em] text-slate-950 sm:text-3xl">
-            Judge Mode
+            Demo Playground
           </h1>
 
           <p className="mt-1 text-xs text-slate-500 sm:text-sm">
@@ -96,7 +96,7 @@ export default function DemoPage() {
 
           <div className="min-w-0 flex-1">
             <h2 className="text-xs font-semibold text-amber-950">
-              Demo environment
+              Demo data
             </h2>
             <p className="text-[11px] text-amber-900/80 truncate">
               Loading a scenario overrides the current demo household data. Intended strictly for testing and live demonstrations.

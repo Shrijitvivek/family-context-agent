@@ -60,7 +60,7 @@ export default function ScenarioPicker({
       </h2>
 
       <p className="mt-2 text-sm text-slate-500">
-        Load a fictional family scenario for judge testing.
+        Load a sample family scenario to explore Famora AI.
       </p>
 
       {error && (

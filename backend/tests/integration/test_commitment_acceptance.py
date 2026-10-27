@@ -60,7 +60,9 @@ class EmptyPriorityService:
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_electricity_bill_is_resolved_and_saved_in_postgres():
+async def test_electricity_bill_is_resolved_and_saved_in_postgres(
+    monkeypatch,
+):
     """Verify agent date resolution and real PostgreSQL persistence."""
     async with AsyncSessionLocal() as session:
         family = Family(
@@ -93,6 +95,12 @@ async def test_electricity_bill_is_resolved_and_saved_in_postgres():
             member_id=None,
             conversation_id=None,
             user_message="Electricity bill ₹3,240 due October 25",
+            metadata={"today": "2026-10-24"},
+        )
+
+        monkeypatch.setattr(
+            "app.tools.commitment_tools._today",
+            lambda: date(2026, 10, 24),
         )
 
         result = await agent.run(state)

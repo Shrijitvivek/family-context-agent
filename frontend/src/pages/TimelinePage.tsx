@@ -22,6 +22,7 @@ import { useFamily } from "../context/FamilyContext";
 import type { TimelineResponse } from "../types/api";
 import type { Commitment, CommitmentStatus } from "../types/domain";
 import { getTimeline } from "../services/api/timeline";
+import { formatDate } from "../utils/date";
 
 type IconName =
   | "calendar"
@@ -248,29 +249,13 @@ const priorityStyles: Record<Exclude<Commitment["priority"], null>, string> = {
   critical: "bg-rose-100 text-rose-700",
 };
 
-function formatDate(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return value;
-
-  return date.toLocaleDateString("en-IN", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
 function formatStatus(value: string) {
   return value
     .replaceAll("_", " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function EmptyState({
-  filtered,
-}: {
-  filtered: boolean;
-}) {
+function EmptyState({ filtered }: { filtered: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center px-5 py-14 text-center sm:py-20">
       <div className="flex size-12 items-center justify-center rounded-2xl bg-violet-50 text-violet-600">
@@ -353,7 +338,8 @@ export default function TimelinePage() {
     () =>
       selectedMemberId
         ? timelineItems.filter(
-            (item) => item.memberId === selectedMemberId || item.memberId == null,
+            (item) =>
+              item.memberId === selectedMemberId || item.memberId == null,
           )
         : timelineItems,
     [timelineItems, selectedMemberId],
@@ -371,11 +357,15 @@ export default function TimelinePage() {
     () => ({
       all: memberItems.length,
       pending: memberItems.filter((item) => item.status === "pending").length,
-      scheduled: memberItems.filter((item) => item.status === "scheduled").length,
-      in_progress: memberItems.filter((item) => item.status === "in_progress").length,
-      completed: memberItems.filter((item) => item.status === "completed").length,
+      scheduled: memberItems.filter((item) => item.status === "scheduled")
+        .length,
+      in_progress: memberItems.filter((item) => item.status === "in_progress")
+        .length,
+      completed: memberItems.filter((item) => item.status === "completed")
+        .length,
       overdue: memberItems.filter((item) => item.status === "overdue").length,
-      cancelled: memberItems.filter((item) => item.status === "cancelled").length,
+      cancelled: memberItems.filter((item) => item.status === "cancelled")
+        .length,
     }),
     [memberItems],
   );
@@ -386,7 +376,11 @@ export default function TimelinePage() {
       <Surface className="p-6 sm:p-8 flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-violet-100 bg-violet-50/70 px-3 py-1.5">
-            <CalendarDays aria-hidden="true" size={14} className="text-violet-600" />
+            <CalendarDays
+              aria-hidden="true"
+              size={14}
+              className="text-violet-600"
+            />
             <span className="text-xs font-semibold text-violet-700">
               Family commitments
             </span>
@@ -432,7 +426,9 @@ export default function TimelinePage() {
               {loading ? "—" : counts.all}
             </p>
             <p className="mt-1 text-xs text-slate-400 font-medium truncate">
-              {selectedMember ? `For ${selectedMember.name}` : "Total in timeline"}
+              {selectedMember
+                ? `For ${selectedMember.name}`
+                : "Total in timeline"}
             </p>
           </div>
           <IconTile icon="calendar" tone="violet" size="md" />

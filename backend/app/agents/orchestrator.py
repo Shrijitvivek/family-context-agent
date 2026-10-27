@@ -295,14 +295,6 @@ def _past_due_creation_confirmation(state: AgentState) -> str | None:
     ):
         return None
 
-    try:
-        due_date = resolve_commitment_due_date(
-            message,
-            get_settings().family_timezone,
-        )
-    except ValueError:
-        return None
-    
     current_date = state.metadata.get("today")
     today = (
         date.fromisoformat(current_date)
@@ -310,8 +302,18 @@ def _past_due_creation_confirmation(state: AgentState) -> str | None:
         else today_in(get_settings().family_timezone)
     )
 
-    if due_date < today:
+    try:
+        due_date = resolve_commitment_due_date(
+            message,
+            get_settings().family_timezone,
+            today=today,
+        )
+    except ValueError:
         return None
+
+    if due_date >= today:
+        return None
+
 
     message_without_date = re.sub(
         r"\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{4})\b",
