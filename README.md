@@ -19,7 +19,6 @@ This repository includes the application, database migrations, automated tests, 
 - [Testing](#testing)
 - [Additional documentation](#additional-documentation)
 - [Known limitations](#known-limitations)
-- [License](#license)
 
 ## Problem and solution
 
