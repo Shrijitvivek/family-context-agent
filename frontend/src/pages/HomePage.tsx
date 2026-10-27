@@ -514,8 +514,15 @@ export default function HomePage() {
 
     async function loadDashboard() {
       setLoading(true);
-
       setError(null);
+
+      // Clear the previous selection while the new data loads.
+      setUpcomingItems([]);
+      setTimelineItems([]);
+      setPriorities([]);
+      setRecentExpenses([]);
+      setExpenseTotal(null);
+      setDocumentCount(null);
 
       try {
         const familyId = selectedFamilyId!;

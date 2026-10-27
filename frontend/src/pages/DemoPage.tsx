@@ -15,15 +15,16 @@ import {
 } from "lucide-react";
 
 import ScenarioPicker from "../components/demo/ScenarioPicker";
+import { useFamily } from "../context/FamilyContext";
 
 export default function DemoPage() {
   const navigate = useNavigate();
 
-  const handleLoaded = (familyId: string) => {
-    localStorage.setItem("demo_family_id", familyId);
-    navigate("/");
-  };
+  const { setSelectedFamilyId } = useFamily();
 
+  const handleLoaded = (familyId: string) => {
+    setSelectedFamilyId(familyId);
+  };
   return (
     <main className="mx-auto flex h-[calc(100vh-theme(spacing.16))] max-h-screen w-full max-w-[1600px] flex-col justify-between gap-4 overflow-hidden pb-4 font-sans sm:gap-5">
       {/* Page Header Surface */}
@@ -41,13 +42,18 @@ export default function DemoPage() {
           </h1>
 
           <p className="mt-1 text-xs text-slate-500 sm:text-sm">
-            Load a prepared family scenario and demonstrate the agent end-to-end.
+            Load a prepared family scenario and demonstrate the agent
+            end-to-end.
           </p>
         </div>
 
         <div className="hidden items-center gap-2 sm:flex">
           <span className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
-            <FlaskConical size={14} aria-hidden="true" className="text-slate-600" />
+            <FlaskConical
+              size={14}
+              aria-hidden="true"
+              className="text-slate-600"
+            />
             Interactive testing environment
           </span>
         </div>
@@ -65,7 +71,8 @@ export default function DemoPage() {
               Demo Scenarios
             </h2>
             <p className="mt-0.5 text-xs text-slate-500 leading-relaxed">
-              Choose a prepared fictional family scenario to explore the application with sample household data.
+              Choose a prepared fictional family scenario to explore the
+              application with sample household data.
             </p>
           </div>
         </div>
@@ -77,13 +84,17 @@ export default function DemoPage() {
             aria-hidden="true"
           />
           <span>
-            Once loaded, you'll immediately return to the main dashboard with your selected scenario active.
+            Once loaded, you'll immediately return to the main dashboard with
+            your selected scenario active.
           </span>
         </div>
       </section>
 
       {/* Scenario Selector */}
-      <section aria-label="Choose a demo scenario" className="min-h-0 flex-1 overflow-y-auto">
+      <section
+        aria-label="Choose a demo scenario"
+        className="min-h-0 flex-1 overflow-y-auto"
+      >
         <ScenarioPicker onLoaded={handleLoaded} />
       </section>
 
@@ -95,11 +106,10 @@ export default function DemoPage() {
           </div>
 
           <div className="min-w-0 flex-1">
-            <h2 className="text-xs font-semibold text-amber-950">
-              Demo data
-            </h2>
+            <h2 className="text-xs font-semibold text-amber-950">Demo data</h2>
             <p className="text-[11px] text-amber-900/80 truncate">
-              Loading a scenario overrides the current demo household data. Intended strictly for testing and live demonstrations.
+              Loading a scenario overrides the current demo household data.
+              Intended strictly for testing and live demonstrations.
             </p>
           </div>
         </div>
