@@ -1,186 +1,345 @@
-/**
- * DocumentsPage
- *
- * Displays the family's uploaded documents and their processing status.
- * Updated to match the refined minimalist design system.
- */
-
-import { useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ChangeEvent, ReactNode } from "react";
 import {
+  AlertCircle,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  Clock3,
   FileText,
-  Upload,
-  RefreshCw,
   Files,
   ShieldCheck,
-  User,
+  Upload,
+  UserRound,
+  Wallet,
+  X,
+  RefreshCw,
 } from "lucide-react";
 
 import DocumentCard from "../components/documents/DocumentCard";
-
 import {
+  confirmDocument,
   getDocuments,
   type DocumentResponse,
   uploadDocument,
-  confirmDocument,
 } from "../services/api/documents";
-
 import { useFamily } from "../context/FamilyContext";
 import { formatDate } from "../utils/date";
 
-type IconName =
-  | "calendar"
-  | "check"
-  | "wallet"
-  | "file"
-  | "flag"
-  | "cart"
-  | "medical"
-  | "fuel"
-  | "food"
-  | "activity"
-  | "clock"
-  | "refresh"
-  | "chevron"
-  | "alert"
-  | "sparkles"
-  | "user"
-  | "plus"
-  | "upload"
-  | "chat"
-  | "arrow-right"
-  | "receipt";
+type ExtractedData = Record<string, unknown>;
 
-function Icon({
-  name,
-  size = 20,
-  className = "",
-}: {
-  name: IconName;
-  size?: number;
-  className?: string;
-}) {
-  const shared = {
-    width: size,
-    height: size,
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 1.7,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-    className,
-    "aria-hidden": true as const,
+type CommitmentDraft = {
+  title: string;
+  commitment_type: string;
+  category: string;
+  description: string;
+  amount: string;
+  start_date: string;
+  due_date: string;
+  member_name: string;
+  member_id: string;
+};
+
+type DetailItem = { label: string; value: string };
+
+const COMMITMENT_TYPES = [
+  { value: "BILL", label: "Bill" },
+  { value: "APPOINTMENT", label: "Appointment" },
+  { value: "LAB_TEST", label: "Lab test" },
+  { value: "HOME_TASK", label: "Home task" },
+  { value: "TASK", label: "Task" },
+  { value: "EDUCATION", label: "Education" },
+  { value: "DEADLINE", label: "Deadline" },
+  { value: "RENEWAL", label: "Renewal" },
+];
+
+const EXCLUDED_DETAIL_KEYS = new Set([
+  "confidence",
+  "missingfields",
+  "title",
+  "commitmenttitle",
+  "commitmenttype",
+  "category",
+  "description",
+  "amount",
+  "startdate",
+  "duedate",
+  "membername",
+  "appointmentdate",
+  "eventdate",
+  "visitdate",
+  "meetingdate",
+  "family",
+  "familyname",
+  "member",
+  "memberaccount",
+  "accountname",
+  "documenttype",
+  "type",
+]);
+
+function normalizeKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function normalizeFamilyName(value: string): string {
+  return normalizeKey(value)
+    .replace(/^the/, "")
+    .replace(/family$/, "");
+}
+
+function toDisplayLabel(value: string): string {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function toReadableValue(value: unknown): string {
+  if (value === null || value === undefined || value === "")
+    return "Not available";
+  if (typeof value === "string") return value.trim() || "Not available";
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value);
+  if (Array.isArray(value)) {
+    return (
+      value
+        .map(toReadableValue)
+        .filter((item) => item !== "Not available")
+        .join(", ") || "Not available"
+    );
+  }
+  return "Not available";
+}
+
+function flattenEntries(
+  data: ExtractedData,
+): Array<{ key: string; value: unknown }> {
+  const result: Array<{ key: string; value: unknown }> = [];
+  const visit = (record: Record<string, unknown>) => {
+    Object.entries(record).forEach(([key, value]) => {
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        visit(value as Record<string, unknown>);
+      } else {
+        result.push({ key, value });
+      }
+    });
   };
+  visit(data);
+  return result;
+}
 
-  const drawings: Record<IconName, ReactNode> = {
-    calendar: (
-      <>
-        <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />
-        <path d="M7.5 3v4M16.5 3v4M3.5 10h17" />
-      </>
-    ),
-    check: (
-      <>
-        <circle cx="12" cy="12" r="9" />
-        <path d="m8 12 2.5 2.5L16 9" />
-      </>
-    ),
-    wallet: (
-      <>
-        <rect x="3" y="5" width="18" height="15" rx="2.5" />
-        <path d="M3 9h18M16 14h2" />
-      </>
-    ),
-    file: (
-      <>
-        <path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
-        <path d="M14 3v6h5M9 13h6M9 17h6" />
-      </>
-    ),
-    flag: (
-      <>
-        <path d="M5 21V4" />
-        <path d="M5 5c5-4 8 4 14 0v10c-6 4-9-4-14 0" />
-      </>
-    ),
-    cart: (
-      <>
-        <path d="M3 4h2l2.2 11h10.9L21 8H6" />
-        <circle cx="9" cy="19" r="1.2" />
-        <circle cx="17" cy="19" r="1.2" />
-      </>
-    ),
-    medical: (
-      <>
-        <rect x="3" y="4" width="18" height="16" rx="3" />
-        <path d="M12 8v8M8 12h8" />
-      </>
-    ),
-    fuel: (
-      <>
-        <path d="M5 21V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v16M4 21h13M7 7h7" />
-        <path d="M16 9h2l2 3v6a2 2 0 0 1-4 0v-3" />
-      </>
-    ),
-    food: (
-      <>
-        <path d="M4 3v7a3 3 0 0 0 6 0V3M7 3v18M17 3v18M17 3c-4 4-4 9 0 10" />
-      </>
-    ),
-    activity: <path d="M3 12h4l3-8 4 16 3-8h4" />,
-    clock: (
-      <>
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 7v5l3 2" />
-      </>
-    ),
-    refresh: (
-      <>
-        <path d="M20 7v5h-5M4 17v-5h5" />
-        <path d="M5.5 9a7 7 0 0 1 11.7-2L20 12M4 12l2.8 5a7 7 0 0 0 11.7-2" />
-      </>
-    ),
-    chevron: <path d="m9 18 6-6-6-6" />,
-    alert: (
-      <>
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 8v5M12 16.5h.01" />
-      </>
-    ),
-    sparkles: (
-      <>
-        <path d="m12 3 1.9 5.8L20 11l-6.1 2.2L12 19l-2-5.8L4 11l6-2.2L12 3Z" />
-        <path d="m19 14 1.1 2.2L22 17l-1.9.8L19 20l-.9-2.2L16 17l2.1-.8L19 14Z" />
-      </>
-    ),
-    user: (
-      <>
-        <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-        <circle cx="12" cy="7" r="4" />
-      </>
-    ),
-    plus: <path d="M12 5v14M5 12h14" />,
-    upload: (
-      <>
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-        <polyline points="17 8 12 3 7 8" />
-        <line x1="12" y1="3" x2="12" y2="15" />
-      </>
-    ),
-    chat: (
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    ),
-    "arrow-right": <path d="M5 12h14M12 5l7 7-7 7" />,
-    receipt: (
-      <>
-        <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2L18 3l-2-1-2 1-2-1-2 1-2-1-2 1-2-1Z" />
-        <path d="M8 8h8M8 12h8M8 16h5" />
-      </>
-    ),
+function findValue(data: ExtractedData, aliases: string[]): unknown {
+  const wanted = new Set(aliases.map(normalizeKey));
+  const entries = flattenEntries(data);
+  for (const entry of entries) {
+    if (
+      wanted.has(normalizeKey(entry.key)) &&
+      entry.value !== null &&
+      entry.value !== undefined &&
+      entry.value !== ""
+    ) {
+      return entry.value;
+    }
+  }
+  return undefined;
+}
+
+function normalizeDate(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) return "";
+  const text = value.trim();
+  const isoMatch = text.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoMatch) return isoMatch[1];
+  const parsed = Date.parse(text);
+  if (Number.isNaN(parsed)) return "";
+  const date = new Date(parsed);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function normalizeCommitmentType(
+  value: unknown,
+  documentType: string | null,
+): string {
+  const raw = typeof value === "string" ? value : (documentType ?? "");
+  const normalized = raw
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_|_$/g, "");
+  if (COMMITMENT_TYPES.some((item) => item.value === normalized))
+    return normalized;
+  const lower = raw.toLowerCase();
+  if (/appointment|meeting|doctor|clinic|dent(al|ist)/.test(lower))
+    return "APPOINTMENT";
+  if (/lab.?test|blood.?test|diagnostic/.test(lower)) return "LAB_TEST";
+  if (
+    /bill|invoice|fee|electricity|water|broadband|maintenance|lpg|payment/.test(
+      lower,
+    )
+  )
+    return "BILL";
+  if (/renewal|renew/.test(lower)) return "RENEWAL";
+  if (/education|school/.test(lower)) return "EDUCATION";
+  if (/home.?task/.test(lower)) return "HOME_TASK";
+  if (/deadline/.test(lower)) return "DEADLINE";
+  return "TASK";
+}
+
+function titleFromFilename(fileName: string): string {
+  const withoutExtension = fileName.replace(/\.[^.]+$/, "");
+  const cleaned = withoutExtension
+    .replace(/^\d+[_\s-]*/, "")
+    .replace(/\b\d{4}-\d{2}-\d{2}\b/g, " ")
+    .replace(/\b(due|judging)\b/gi, " ")
+    .replace(/\b(taylor|morgan|parker|family)\b/gi, " ")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || "Document commitment";
+}
+
+function buildDraft(
+  document: DocumentResponse,
+  members: Array<{ id: string; name: string }>,
+  selectedMemberId: string | null,
+): CommitmentDraft {
+  const data = (document.extracted_data ?? {}) as ExtractedData;
+  const type = normalizeCommitmentType(
+    findValue(data, [
+      "commitment_type",
+      "commitment type",
+      "document_type",
+      "record_type",
+      "type",
+    ]),
+    document.document_type,
+  );
+  const rawTitle = findValue(data, [
+    "title",
+    "commitment_title",
+    "bill_title",
+    "document_title",
+    "appointment_title",
+    "service_name",
+    "fee_type",
+  ]);
+  const appointmentDate = findValue(data, [
+    "appointment_date",
+    "event_date",
+    "visit_date",
+    "meeting_date",
+    "start_date",
+    "date",
+  ]);
+  const dueDate = findValue(data, [
+    "due_date",
+    "due date",
+    "payment_due_date",
+    "bill_due_date",
+    "deadline",
+  ]);
+  const rawAmount = findValue(data, [
+    "amount",
+    "total_amount",
+    "bill_amount",
+    "payable_amount",
+    "fee_amount",
+    "total_due",
+  ]);
+  const rawCategory = findValue(data, [
+    "category",
+    "bill_category",
+    "document_category",
+  ]);
+  const description = findValue(data, [
+    "description",
+    "summary",
+    "reason",
+    "purpose",
+    "document_details",
+  ]);
+  const member = findValue(data, [
+    "member_name",
+    "member / account",
+    "member",
+    "person",
+    "patient",
+    "student",
+    "account_name",
+  ]);
+  const memberName = typeof member === "string" ? member.trim() : "";
+  const matchedMember = memberName
+    ? members.find(
+        (item) => item.name.trim().toLowerCase() === memberName.toLowerCase(),
+      )
+    : undefined;
+
+  let amount = "";
+  if (typeof rawAmount === "number") amount = String(rawAmount);
+  else if (typeof rawAmount === "string")
+    amount = rawAmount.replace(/[₹,\s]/g, "").replace(/^(INR|Rs\.?)/i, "");
+
+  const startDate = normalizeDate(appointmentDate);
+  let normalizedDueDate = normalizeDate(dueDate);
+  if (type === "APPOINTMENT" || type === "LAB_TEST") {
+    if (!normalizedDueDate && startDate) normalizedDueDate = "";
+  }
+
+  return {
+    title:
+      typeof rawTitle === "string" && rawTitle.trim()
+        ? rawTitle.trim()
+        : titleFromFilename(document.file_name),
+    commitment_type: type,
+    category: typeof rawCategory === "string" ? rawCategory : "",
+    description: typeof description === "string" ? description : "",
+    amount,
+    start_date: startDate,
+    due_date: normalizedDueDate,
+    member_name: memberName,
+    member_id: memberName
+      ? (matchedMember?.id ?? "")
+      : (selectedMemberId ?? ""),
   };
+}
 
-  return <svg {...shared}>{drawings[name]}</svg>;
+function getAdditionalDetails(data: ExtractedData): DetailItem[] {
+  const seen = new Set<string>();
+  const entries = flattenEntries(data);
+  const items: DetailItem[] = [];
+  for (const { key, value } of entries) {
+    const normalized = normalizeKey(key);
+    if (EXCLUDED_DETAIL_KEYS.has(normalized) || normalized === "fields")
+      continue;
+    if (value === null || value === undefined || value === "") continue;
+    const readable = toReadableValue(value);
+    if (readable === "Not available") continue;
+    const label = toDisplayLabel(key);
+    const signature = `${normalizeKey(label)}:${readable.toLowerCase()}`;
+    if (seen.has(signature)) continue;
+    seen.add(signature);
+    items.push({ label, value: readable });
+  }
+  return items;
+}
+
+function StatusBadge({ status }: { status: string | null }) {
+  const normalized = (status ?? "UNKNOWN").toUpperCase();
+  const styles: Record<string, string> = {
+    NEEDS_CONFIRMATION: "border-amber-200 bg-amber-50 text-amber-800",
+    CONFIRMED: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    PENDING: "border-blue-200 bg-blue-50 text-blue-700",
+    FAILED: "border-rose-200 bg-rose-50 text-rose-700",
+    UNREADABLE: "border-slate-200 bg-slate-100 text-slate-700",
+  };
+  return (
+    <span
+      className={`inline-flex max-w-full items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-4 ${styles[normalized] ?? styles.UNREADABLE}`}
+    >
+      {normalized.replace(/_/g, " ")}
+    </span>
+  );
 }
 
 function Surface({
@@ -199,58 +358,23 @@ function Surface({
   );
 }
 
-function IconTile({
-  icon,
-  tone = "violet",
-  size = "md",
-}: {
-  icon: IconName;
-  tone?: "violet" | "blue" | "green" | "amber" | "rose" | "slate";
-  size?: "sm" | "md" | "lg";
-}) {
-  const tones = {
-    violet: "bg-violet-50 text-violet-700 ring-violet-100/70",
-    blue: "bg-blue-50 text-blue-700 ring-blue-100/70",
-    green: "bg-emerald-50 text-emerald-700 ring-emerald-100/70",
-    amber: "bg-amber-50 text-amber-700 ring-amber-100/70",
-    rose: "bg-rose-50 text-rose-700 ring-rose-100/70",
-    slate: "bg-slate-100 text-slate-700 ring-slate-200/60",
-  };
-
-  const dimensions = {
-    sm: "size-9 rounded-xl",
-    md: "size-11 rounded-xl",
-    lg: "size-12 rounded-[14px]",
-  };
-
-  const iconSize = size === "sm" ? 17 : size === "lg" ? 22 : 20;
-
-  return (
-    <div
-      className={`inline-flex shrink-0 items-center justify-center ring-1 ring-inset ${tones[tone]} ${dimensions[size]}`}
-    >
-      <Icon name={icon} size={iconSize} />
-    </div>
-  );
-}
-
 export default function DocumentsPage() {
-  const { selectedFamilyId, selectedMemberId } = useFamily();
-
+  const { families, members, selectedFamilyId, selectedMemberId } = useFamily();
   const [documents, setDocuments] = useState<DocumentResponse[]>([]);
   const [selectedDocument, setSelectedDocument] =
     useState<DocumentResponse | null>(null);
+  const [draft, setDraft] = useState<CommitmentDraft | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const [showMoreDetails, setShowMoreDetails] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
-
     const loadDocuments = async () => {
       if (!selectedFamilyId) {
         setDocuments([]);
@@ -258,47 +382,66 @@ export default function DocumentsPage() {
         setError(null);
         return;
       }
-
       try {
         setLoading(true);
         setError(null);
-
         const data = await getDocuments(selectedFamilyId, selectedMemberId);
-
-        if (!cancelled) {
-          setDocuments(data);
-        }
+        if (!cancelled) setDocuments(data);
       } catch {
-        if (!cancelled) {
-          setError("Unable to load documents. Please try again.");
-        }
+        if (!cancelled) setError("Unable to load documents. Please try again.");
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     };
-
     void loadDocuments();
-
     return () => {
       cancelled = true;
     };
   }, [selectedFamilyId, selectedMemberId, retryCount]);
 
-  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const selectedData = (selectedDocument?.extracted_data ??
+    {}) as ExtractedData;
+  const additionalDetails = useMemo(
+    () =>
+      getAdditionalDetails(
+        (selectedDocument?.extracted_data ?? {}) as ExtractedData,
+      ),
+    [selectedDocument?.extracted_data],
+  );
+  const currentFamilyName =
+    families.find((family) => family.id === selectedFamilyId)?.name ?? "";
+  const extractedFamilyName = selectedDocument
+    ? toReadableValue(
+        findValue(selectedData, ["family", "family_name", "household_name"]),
+      )
+    : "Not available";
+  const familyMismatch =
+    extractedFamilyName !== "Not available" &&
+    currentFamilyName &&
+    normalizeFamilyName(extractedFamilyName) !==
+      normalizeFamilyName(currentFamilyName);
+
+  const openDocument = (document: DocumentResponse) => {
+    setSelectedDocument(document);
+    setDraft(buildDraft(document, members, selectedMemberId));
+    setConfirmError("");
+    setShowMoreDetails(false);
+  };
+
+  const closeDocument = () => {
+    if (confirming) return;
+    setSelectedDocument(null);
+    setDraft(null);
+    setConfirmError("");
+  };
+
+  const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-
-    if (!file || !selectedFamilyId) {
-      return;
-    }
-
+    if (!file || !selectedFamilyId) return;
     try {
       setUploading(true);
       setError(null);
-
       await uploadDocument(selectedFamilyId, file, selectedMemberId);
-
       const data = await getDocuments(selectedFamilyId, selectedMemberId);
       setDocuments(data);
     } catch (err) {
@@ -309,65 +452,54 @@ export default function DocumentsPage() {
       );
     } finally {
       setUploading(false);
-
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
   const handleConfirmSelectedDocument = async () => {
-    if (!selectedDocument || !selectedFamilyId) return;
-
-    const data = selectedDocument.extracted_data ?? {};
-    const title = data.title;
-    const commitmentType = data.commitment_type;
-
+    if (!selectedDocument || !selectedFamilyId || !draft) return;
+    if (!draft.title.trim()) {
+      setConfirmError("Please enter a title before creating the commitment.");
+      return;
+    }
+    if (!draft.commitment_type) {
+      setConfirmError("Please choose what type of commitment this is.");
+      return;
+    }
+    const parsedAmount = draft.amount.trim()
+      ? Number(draft.amount.replace(/[₹,\s]/g, ""))
+      : undefined;
     if (
-      typeof title !== "string" ||
-      !title.trim() ||
-      typeof commitmentType !== "string" ||
-      !commitmentType.trim()
+      parsedAmount !== undefined &&
+      (!Number.isFinite(parsedAmount) || parsedAmount <= 0)
     ) {
-      setConfirmError("The document is missing a title or commitment type.");
+      setConfirmError(
+        "Enter a valid amount greater than zero, or leave it blank.",
+      );
       return;
     }
 
     setConfirming(true);
     setConfirmError("");
-
     try {
-      const rawAmount = data.amount;
-      const amount =
-        typeof rawAmount === "number"
-          ? rawAmount
-          : typeof rawAmount === "string" && rawAmount.trim()
-            ? Number(rawAmount)
-            : undefined;
-
       await confirmDocument(selectedDocument.id, {
         family_id: selectedFamilyId,
-        member_id: selectedMemberId || undefined,
-        commitment_type: commitmentType,
-        title,
-        category: typeof data.category === "string" ? data.category : undefined,
-        description:
-          typeof data.description === "string" ? data.description : undefined,
-        amount:
-          amount !== undefined && Number.isFinite(amount) ? amount : undefined,
-        start_date:
-          typeof data.start_date === "string" ? data.start_date : undefined,
-        due_date: typeof data.due_date === "string" ? data.due_date : undefined,
-        priority: "MEDIUM",
+        member_id: draft.member_id || undefined,
+        commitment_type: draft.commitment_type,
+        title: draft.title.trim(),
+        category: draft.category.trim() || undefined,
+        description: draft.description.trim() || undefined,
+        amount: parsedAmount,
+        start_date: draft.start_date || undefined,
+        due_date: draft.due_date || undefined,
       });
-
       const updatedDocuments = await getDocuments(
         selectedFamilyId,
         selectedMemberId,
       );
-
       setDocuments(updatedDocuments);
       setSelectedDocument(null);
+      setDraft(null);
     } catch (err) {
       setConfirmError(
         err instanceof Error
@@ -379,10 +511,22 @@ export default function DocumentsPage() {
     }
   };
 
+  const updateDraft = (field: keyof CommitmentDraft, value: string) => {
+    setDraft((current) => (current ? { ...current, [field]: value } : current));
+  };
+
+  const updateMember = (memberId: string) => {
+    const member = members.find((item) => item.id === memberId);
+    setDraft((current) =>
+      current
+        ? { ...current, member_id: memberId, member_name: member?.name ?? "" }
+        : current,
+    );
+  };
+
   return (
-    <main className="mx-auto w-full max-w-[1600px] space-y-5 pb-8 sm:space-y-6 font-sans">
-      {/* Page header */}
-      <Surface className="p-6 sm:p-8 flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+    <main className="mx-auto w-full max-w-[1600px] min-w-0 space-y-4 pb-6 font-sans sm:space-y-6 sm:pb-8">
+      <Surface className="flex min-w-0 flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6 sm:p-8">
         <div className="min-w-0">
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50/70 px-3 py-1.5">
             <FileText aria-hidden="true" size={14} className="text-blue-600" />
@@ -390,88 +534,78 @@ export default function DocumentsPage() {
               Family documents
             </span>
           </div>
-
           <h1 className="text-3xl font-bold tracking-[-0.055em] text-slate-950 sm:text-4xl">
             Documents
           </h1>
-
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-600">
-            View and manage your family's important documents.
+            View, review and manage your family’s important documents.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <label
-            htmlFor="document-upload"
-            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold shadow-sm transition cursor-pointer ${
-              uploading || !selectedFamilyId
-                ? "cursor-not-allowed bg-slate-100 text-slate-400 border border-slate-200"
-                : "bg-slate-900 text-white hover:bg-slate-800"
-            }`}
-          >
-            {uploading ? (
-              <>
-                <RefreshCw
-                  size={14}
-                  className="animate-spin"
-                  aria-hidden="true"
-                />
-                Uploading...
-              </>
-            ) : (
-              <>
-                <Upload size={14} aria-hidden="true" />
-                Upload document
-              </>
-            )}
-
-            <input
-              ref={fileInputRef}
-              id="document-upload"
-              type="file"
-              accept=".pdf,.jpg,.jpeg,.png"
-              disabled={uploading || !selectedFamilyId}
-              onChange={handleUpload}
-              className="sr-only"
-            />
-          </label>
-        </div>
+        <label
+          htmlFor="document-upload"
+          className={`inline-flex w-full shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold shadow-sm transition sm:w-auto sm:py-2.5 sm:text-xs ${
+            uploading || !selectedFamilyId
+              ? "cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400"
+              : "bg-slate-900 text-white hover:bg-slate-800"
+          }`}
+        >
+          {uploading ? (
+            <RefreshCw size={16} className="animate-spin" aria-hidden="true" />
+          ) : (
+            <Upload size={16} aria-hidden="true" />
+          )}
+          {uploading ? "Uploading…" : "Upload document"}
+          <input
+            ref={fileInputRef}
+            id="document-upload"
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png"
+            disabled={uploading || !selectedFamilyId}
+            onChange={handleUpload}
+            className="sr-only"
+          />
+        </label>
       </Surface>
 
-      {/* Upload info banner */}
-      <Surface className="p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 bg-slate-50/50">
-        <div className="flex items-center gap-2">
-          <FileText size={15} className="text-slate-400" aria-hidden="true" />
-          <span>Supported formats: PDF, JPG, JPEG, PNG</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <ShieldCheck
+      <Surface className="flex flex-col gap-3 bg-slate-50/50 p-4 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+        <div className="flex items-start gap-2">
+          <FileText
             size={15}
-            className="text-emerald-600"
+            className="mt-0.5 shrink-0 text-slate-400"
             aria-hidden="true"
           />
-          <span>Securely stored & processed</span>
+          <span>Supported formats: PDF, JPG, JPEG and PNG</span>
+        </div>
+        <div className="flex items-start gap-2">
+          <ShieldCheck
+            size={15}
+            className="mt-0.5 shrink-0 text-emerald-600"
+            aria-hidden="true"
+          />
+          <span>Securely stored and processed</span>
         </div>
       </Surface>
 
-      {/* Error state */}
       {error && (
         <div
           role="alert"
-          className="flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50/70 p-5 sm:flex-row sm:items-center sm:justify-between shadow-sm"
+          className="flex min-w-0 flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50/70 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5"
         >
-          <div>
-            <p className="text-sm font-semibold text-rose-800">
-              Something went wrong
-            </p>
-            <p className="mt-1 text-sm text-rose-700">{error}</p>
+          <div className="flex min-w-0 gap-2">
+            <AlertCircle size={18} className="mt-0.5 shrink-0 text-rose-700" />
+            <div>
+              <p className="text-sm font-semibold text-rose-800">
+                Something went wrong
+              </p>
+              <p className="mt-1 break-words text-sm text-rose-700">{error}</p>
+            </div>
           </div>
-
           <button
             type="button"
             onClick={() => setRetryCount((count) => count + 1)}
             disabled={loading}
-            className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-xs font-semibold text-rose-700 shadow-sm border border-rose-200 hover:bg-rose-50 transition disabled:opacity-60"
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white px-4 py-2.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:opacity-60"
           >
             <RefreshCw size={14} aria-hidden="true" />
             Try again
@@ -479,26 +613,24 @@ export default function DocumentsPage() {
         </div>
       )}
 
-      {/* Documents list section */}
-      <Surface className="p-5 sm:p-6">
-        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-          <div>
+      <Surface className="min-w-0 p-4 sm:p-6">
+        <div className="mb-5 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
             <h2 className="text-base font-semibold tracking-tight text-slate-950">
               Your documents
             </h2>
-            <p className="mt-1 text-xs text-slate-500">
-              Your family's uploaded files and processing status.
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">
+              Open a document to review the information extracted by Eva.
             </p>
           </div>
-
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {selectedMemberId && (
-              <span className="inline-flex items-center gap-1.5 rounded-xl border border-violet-100 bg-violet-50/70 px-3 py-1 text-xs font-medium text-violet-700">
-                <User size={13} aria-hidden="true" />
+              <span className="inline-flex items-center gap-1.5 rounded-xl border border-violet-100 bg-violet-50/70 px-3 py-1.5 text-xs font-medium text-violet-700">
+                <UserRound size={13} aria-hidden="true" />
                 Member filtered
               </span>
             )}
-            <span className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+            <span className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600">
               <Files size={13} aria-hidden="true" />
               {documents.length}{" "}
               {documents.length === 1 ? "document" : "documents"}
@@ -507,51 +639,53 @@ export default function DocumentsPage() {
         </div>
 
         {loading ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 py-4">
+          <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
             {[1, 2, 3].map((item) => (
               <div
                 key={item}
-                className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 space-y-3"
+                className="min-w-0 animate-pulse space-y-3 rounded-2xl border border-slate-200 bg-slate-50/50 p-4 sm:p-5"
               >
-                <div className="h-10 w-10 animate-pulse rounded-xl bg-slate-200" />
-                <div className="h-4 w-3/4 animate-pulse rounded bg-slate-200" />
-                <div className="h-3 w-1/2 animate-pulse rounded bg-slate-200" />
+                <div className="h-10 w-10 rounded-xl bg-slate-200" />
+                <div className="h-4 w-3/4 rounded bg-slate-200" />
+                <div className="h-3 w-1/2 rounded bg-slate-200" />
               </div>
             ))}
           </div>
         ) : !selectedFamilyId ? (
-          <div className="rounded-2xl border border-dashed border-slate-200 px-5 py-12 text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
-              <Files size={22} aria-hidden="true" />
-            </div>
+          <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center sm:py-12">
+            <Files
+              size={24}
+              className="mx-auto text-slate-400"
+              aria-hidden="true"
+            />
             <h3 className="mt-3 text-sm font-semibold text-slate-900">
               Select a family
             </h3>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-slate-500">
               Choose a family to view and manage its documents.
             </p>
           </div>
         ) : documents.length === 0 && !error ? (
-          <div className="rounded-2xl border border-dashed border-slate-200 px-5 py-12 text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+          <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center sm:py-12">
+            <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
               <FileText size={22} aria-hidden="true" />
             </div>
             <h3 className="mt-3 text-sm font-semibold text-slate-900">
               No documents yet
             </h3>
-            <p className="mt-1 text-xs text-slate-500 max-w-sm mx-auto">
+            <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-slate-500">
               Upload your first family document using the button above. Your
-              uploaded documents will appear here.
+              uploaded files will appear here.
             </p>
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
             {documents.map((document) => (
               <button
                 key={document.id}
                 type="button"
-                onClick={() => setSelectedDocument(document)}
-                className="w-full cursor-pointer rounded-2xl text-left transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-violet-500"
+                onClick={() => openDocument(document)}
+                className="w-full min-w-0 rounded-2xl text-left transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-violet-500"
                 aria-label={`View details for ${document.file_name}`}
               >
                 <DocumentCard
@@ -563,137 +697,389 @@ export default function DocumentsPage() {
           </div>
         )}
       </Surface>
-      {selectedDocument && (
+
+      {selectedDocument && draft && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
-          onClick={() => setSelectedDocument(null)}
+          className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
+          onClick={closeDocument}
         >
           <section
             role="dialog"
             aria-modal="true"
             aria-labelledby="document-details-title"
-            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl"
+            className="flex max-h-[94dvh] w-full min-w-0 max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[min(90vh,800px)] sm:rounded-2xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
+            <header className="flex shrink-0 items-start gap-3 border-b border-slate-100 px-4 py-4 sm:px-6 sm:py-5">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700">
+                <FileText size={20} aria-hidden="true" />
+              </div>
+              <div className="min-w-0 flex-1">
                 <h2
                   id="document-details-title"
-                  className="text-lg font-semibold text-slate-900"
+                  className="text-base font-semibold text-slate-950 sm:text-lg"
                 >
-                  Document details
+                  Review document
                 </h2>
-                <p className="mt-1 break-words text-sm text-slate-500">
+                <p className="mt-1 break-words text-xs leading-relaxed text-slate-500 sm:text-sm">
                   {selectedDocument.file_name}
                 </p>
+                <div className="mt-2">
+                  <StatusBadge status={selectedDocument.processing_status} />
+                </div>
               </div>
-
               <button
                 type="button"
-                onClick={() => setSelectedDocument(null)}
-                className="rounded-lg px-3 py-1 text-sm text-slate-500 hover:bg-slate-100"
+                onClick={closeDocument}
+                disabled={confirming}
+                aria-label="Close document details"
+                className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
               >
-                Close
+                <X size={19} aria-hidden="true" />
               </button>
-            </div>
+            </header>
 
-            <div className="mt-5 space-y-3 text-sm">
-              <div className="flex justify-between gap-4">
-                <span className="text-slate-500">Status</span>
-                <span className="break-words text-right font-medium text-slate-900">
-                  {(selectedDocument.processing_status ?? "UNKNOWN").replace(
-                    /_/g,
-                    " ",
-                  )}
-                </span>
-              </div>
-
-              <div className="flex justify-between gap-4">
-                <span className="text-slate-500">Document type</span>
-                <span className="break-words text-right text-slate-900">
-                  {selectedDocument.document_type || "Not available"}
-                </span>
-              </div>
-
-              <div className="flex justify-between gap-4">
-                <span className="text-slate-500">Uploaded on</span>
-                <span className="text-right text-slate-900">
-                  {selectedDocument.created_at
-                    ? formatDate(selectedDocument.created_at)
-                    : "Not available"}
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-5 border-t border-slate-100 pt-4">
-              <h3 className="mb-3 text-sm font-semibold text-slate-900">
-                Extracted details
-              </h3>
-
-              {selectedDocument.extracted_data &&
-              Object.entries(selectedDocument.extracted_data).some(
-                ([key]) =>
-                  !["confidence", "missing_fields"].includes(key.toLowerCase()),
-              ) ? (
-                <div className="max-h-64 space-y-3 overflow-y-auto">
-                  {Object.entries(selectedDocument.extracted_data)
-                    .filter(
-                      ([key]) =>
-                        !["confidence", "missing_fields"].includes(
-                          key.toLowerCase(),
-                        ),
-                    )
-                    .map(([key, value]) => (
-                      <div key={key}>
-                        <p className="text-xs font-medium text-slate-500">
-                          {key
-                            .replace(/_/g, " ")
-                            .replace(/\b\w/g, (letter) => letter.toUpperCase())}
-                        </p>
-                        <p className="mt-1 break-words text-sm text-slate-800">
-                          {value === null || value === undefined
-                            ? "Not available"
-                            : typeof value === "object"
-                              ? JSON.stringify(value, null, 2)
-                              : String(value)}
-                        </p>
-                      </div>
-                    ))}
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4 sm:space-y-6 sm:px-6 sm:py-5">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="flex min-w-0 items-start gap-2 rounded-xl border border-slate-200 p-3">
+                  <div className="mt-0.5 text-slate-400">
+                    <Files size={16} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium text-slate-500">
+                      Document type
+                    </p>
+                    <p className="mt-1 break-words text-sm font-medium text-slate-800">
+                      {selectedDocument.document_type?.replace(/_/g, " ") ||
+                        "Not available"}
+                    </p>
+                  </div>
                 </div>
-              ) : (
-                <p className="text-sm text-slate-500">
-                  No extracted details available for this document.
-                </p>
+                <div className="flex min-w-0 items-start gap-2 rounded-xl border border-slate-200 p-3">
+                  <div className="mt-0.5 text-slate-400">
+                    <CalendarDays size={16} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium text-slate-500">
+                      Uploaded on
+                    </p>
+                    <p className="mt-1 break-words text-sm font-medium text-slate-800">
+                      {selectedDocument.created_at
+                        ? formatDate(selectedDocument.created_at)
+                        : "Not available"}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex min-w-0 items-start gap-2 rounded-xl border border-slate-200 p-3">
+                  <div className="mt-0.5 text-slate-400">
+                    <ShieldCheck size={16} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium text-slate-500">
+                      Source
+                    </p>
+                    <p className="mt-1 break-words text-sm font-medium text-slate-800">
+                      {(
+                        selectedDocument.file_type ??
+                        selectedDocument.mime_type ??
+                        "File"
+                      )
+                        .toString()
+                        .replace("application/", "")
+                        .replace("image/", "")
+                        .toUpperCase()}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {familyMismatch && (
+                <div
+                  role="alert"
+                  className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-900"
+                >
+                  <AlertCircle
+                    size={18}
+                    className="mt-0.5 shrink-0"
+                    aria-hidden="true"
+                  />
+                  <div className="min-w-0">
+                    <p className="font-semibold">
+                      This document appears to belong to another family
+                    </p>
+                    <p className="mt-1 break-words text-xs leading-relaxed">
+                      The document mentions{" "}
+                      <strong>{extractedFamilyName}</strong>, but the selected
+                      family is <strong>{currentFamilyName}</strong>. Close this
+                      document and switch to the correct family before
+                      confirming it.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <section className="space-y-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-950">
+                    Review extracted details
+                  </h3>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                    Check the information below and correct anything that looks
+                    wrong before saving.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="block min-w-0 sm:col-span-2">
+                    <span className="mb-1.5 block text-xs font-medium text-slate-600">
+                      Title <span className="text-rose-600">*</span>
+                    </span>
+                    <input
+                      value={draft.title}
+                      onChange={(event) =>
+                        updateDraft("title", event.target.value)
+                      }
+                      maxLength={200}
+                      className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                      placeholder="e.g. Electricity bill"
+                    />
+                  </label>
+
+                  <label className="block min-w-0">
+                    <span className="mb-1.5 block text-xs font-medium text-slate-600">
+                      Type <span className="text-rose-600">*</span>
+                    </span>
+                    <div className="relative">
+                      <select
+                        value={draft.commitment_type}
+                        onChange={(event) =>
+                          updateDraft("commitment_type", event.target.value)
+                        }
+                        className="w-full min-w-0 appearance-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 pr-9 text-sm text-slate-900 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                      >
+                        {COMMITMENT_TYPES.map((item) => (
+                          <option key={item.value} value={item.value}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown
+                        size={16}
+                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                      />
+                    </div>
+                  </label>
+
+                  <label className="block min-w-0">
+                    <span className="mb-1.5 block text-xs font-medium text-slate-600">
+                      Category
+                    </span>
+                    <input
+                      value={draft.category}
+                      onChange={(event) =>
+                        updateDraft("category", event.target.value)
+                      }
+                      maxLength={50}
+                      className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                      placeholder="e.g. Utilities, School fees"
+                    />
+                  </label>
+
+                  <label className="block min-w-0">
+                    <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                      <Wallet size={13} />
+                      Amount (₹)
+                    </span>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min="0.01"
+                      step="0.01"
+                      value={draft.amount}
+                      onChange={(event) =>
+                        updateDraft("amount", event.target.value)
+                      }
+                      className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                      placeholder="Leave blank if not applicable"
+                    />
+                  </label>
+
+                  <label className="block min-w-0">
+                    <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                      <UserRound size={13} />
+                      Assign to family member
+                    </span>
+                    <div className="relative">
+                      <select
+                        value={draft.member_id}
+                        onChange={(event) => updateMember(event.target.value)}
+                        className="w-full min-w-0 appearance-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 pr-9 text-sm text-slate-900 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                      >
+                        <option value="">No member assigned</option>
+                        {members
+                          .filter((member) => member.is_active)
+                          .map((member) => (
+                            <option key={member.id} value={member.id}>
+                              {member.name}
+                            </option>
+                          ))}
+                      </select>
+                      <ChevronDown
+                        size={16}
+                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                      />
+                    </div>
+                    {draft.member_name &&
+                      !members.some(
+                        (member) =>
+                          member.name.trim().toLowerCase() ===
+                          draft.member_name.toLowerCase(),
+                      ) && (
+                        <span className="mt-1.5 block text-xs leading-relaxed text-amber-700">
+                          The document names “{draft.member_name}”, which does
+                          not match a member in the selected family. Choose a
+                          member above or leave it unassigned.
+                        </span>
+                      )}
+                  </label>
+
+                  <label className="block min-w-0">
+                    <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                      <CalendarDays size={13} />
+                      Event / start date
+                    </span>
+                    <input
+                      type="date"
+                      value={draft.start_date}
+                      onChange={(event) =>
+                        updateDraft("start_date", event.target.value)
+                      }
+                      className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                    />
+                  </label>
+
+                  <label className="block min-w-0">
+                    <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                      <Clock3 size={13} />
+                      Due date
+                    </span>
+                    <input
+                      type="date"
+                      value={draft.due_date}
+                      onChange={(event) =>
+                        updateDraft("due_date", event.target.value)
+                      }
+                      className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                    />
+                  </label>
+
+                  <label className="block min-w-0 sm:col-span-2">
+                    <span className="mb-1.5 block text-xs font-medium text-slate-600">
+                      Notes / description
+                    </span>
+                    <textarea
+                      rows={3}
+                      maxLength={2000}
+                      value={draft.description}
+                      onChange={(event) =>
+                        updateDraft("description", event.target.value)
+                      }
+                      className="w-full min-w-0 resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm leading-relaxed text-slate-900 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                      placeholder="Additional context from the document"
+                    />
+                  </label>
+                </div>
+              </section>
+
+              {additionalDetails.length > 0 && (
+                <section className="overflow-hidden rounded-2xl border border-slate-200">
+                  <button
+                    type="button"
+                    aria-expanded={showMoreDetails}
+                    onClick={() => setShowMoreDetails((value) => !value)}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition hover:bg-slate-50"
+                  >
+                    <span>
+                      <span className="block text-sm font-semibold text-slate-900">
+                        Other details found in the document
+                      </span>
+                      <span className="mt-0.5 block text-xs text-slate-500">
+                        {additionalDetails.length} additional{" "}
+                        {additionalDetails.length === 1 ? "field" : "fields"}
+                      </span>
+                    </span>
+                    <ChevronDown
+                      size={18}
+                      className={`shrink-0 text-slate-500 transition-transform ${showMoreDetails ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  {showMoreDetails && (
+                    <div className="grid grid-cols-1 gap-0 border-t border-slate-100 sm:grid-cols-2">
+                      {additionalDetails.map((item, index) => (
+                        <div
+                          key={`${item.label}-${index}`}
+                          className="min-w-0 border-b border-slate-100 px-4 py-3 last:border-b-0 sm:even:border-l sm:even:border-l-slate-100"
+                        >
+                          <p className="text-[11px] font-medium text-slate-500">
+                            {item.label}
+                          </p>
+                          <p className="mt-1 break-words text-sm leading-relaxed text-slate-800">
+                            {item.value}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {confirmError && (
+                <div
+                  role="alert"
+                  className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700"
+                >
+                  <AlertCircle size={17} className="mt-0.5 shrink-0" />
+                  <span className="break-words">{confirmError}</span>
+                </div>
               )}
             </div>
 
-            <button
-              type="button"
-              onClick={() => setSelectedDocument(null)}
-              className="mt-5 w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
-            >
-              Done
-            </button>
-            {selectedDocument.processing_status === "NEEDS_CONFIRMATION" && (
-              <>
-                {confirmError && (
-                  <p role="alert" className="mt-3 text-sm text-red-600">
-                    {confirmError}
-                  </p>
-                )}
-
+            <footer className="shrink-0 border-t border-slate-100 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-4">
+              {selectedDocument.processing_status === "NEEDS_CONFIRMATION" ? (
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+                  <button
+                    type="button"
+                    onClick={closeDocument}
+                    disabled={confirming}
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 sm:w-auto sm:py-2.5"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmSelectedDocument}
+                    disabled={confirming || Boolean(familyMismatch)}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:py-2.5"
+                  >
+                    {confirming ? (
+                      <RefreshCw size={16} className="animate-spin" />
+                    ) : (
+                      <CheckCircle2 size={16} />
+                    )}{" "}
+                    {confirming ? "Saving…" : "Confirm and create commitment"}
+                  </button>
+                </div>
+              ) : (
                 <button
                   type="button"
-                  onClick={handleConfirmSelectedDocument}
+                  onClick={closeDocument}
                   disabled={confirming}
-                  className="mt-5 w-full rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50 sm:ml-auto sm:w-auto sm:py-2.5"
                 >
-                  {confirming
-                    ? "Confirming..."
-                    : "Confirm and create commitment"}
+                  <CheckCircle2 size={16} />
+                  Done
                 </button>
-              </>
-            )}
+              )}
+            </footer>
           </section>
         </div>
       )}
