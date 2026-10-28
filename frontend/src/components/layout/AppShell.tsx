@@ -62,10 +62,10 @@ export default function AppShell({ children }: AppShellProps) {
               aria-label="Family Context home"
             >
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white transition-colors duration-200">
-                <House
-                  size={20}
-                  strokeWidth={2}
-                  aria-hidden="true"
+                <img
+                  src="Famora AI logo.jpeg"
+                  alt="Family Context logo"
+                  className="h-10 w-10 shrink-0 rounded-xl object-contain"
                 />
               </span>
 
@@ -88,7 +88,11 @@ export default function AppShell({ children }: AppShellProps) {
                     htmlFor="family-selector"
                     className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400"
                   >
-                    <Users size={12} className="text-slate-400" aria-hidden="true" />
+                    <Users
+                      size={12}
+                      className="text-slate-400"
+                      aria-hidden="true"
+                    />
                     Family
                   </label>
 
@@ -121,7 +125,11 @@ export default function AppShell({ children }: AppShellProps) {
                       htmlFor="member-selector"
                       className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400"
                     >
-                      <User size={12} className="text-slate-400" aria-hidden="true" />
+                      <User
+                        size={12}
+                        className="text-slate-400"
+                        aria-hidden="true"
+                      />
                       Viewing data for
                     </label>
 
@@ -186,13 +194,15 @@ export default function AppShell({ children }: AppShellProps) {
             className="group flex items-center gap-2.5 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
             aria-label="Family Context home"
           >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
-              <House size={19} strokeWidth={2} aria-hidden="true" />
-            </span>
+            <img
+              src="Famora AI logo.jpeg"
+              alt="Family Context logo"
+              className="h-9 w-9 shrink-0 rounded-xl object-contain"
+            />
 
             <span>
               <span className="block text-sm font-bold tracking-tight text-slate-900">
-                Family Context
+                Famora AI
               </span>
               <span className="block text-[10px] text-slate-500">
                 Your family, in sync
@@ -230,7 +240,11 @@ export default function AppShell({ children }: AppShellProps) {
                   htmlFor="mobile-family-selector"
                   className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400"
                 >
-                  <Users size={12} className="text-slate-400" aria-hidden="true" />
+                  <Users
+                    size={12}
+                    className="text-slate-400"
+                    aria-hidden="true"
+                  />
                   Family
                 </label>
 
@@ -238,9 +252,7 @@ export default function AppShell({ children }: AppShellProps) {
                   <select
                     id="mobile-family-selector"
                     value={selectedFamilyId ?? ""}
-                    onChange={(event) =>
-                      handleFamilyChange(event.target.value)
-                    }
+                    onChange={(event) => handleFamilyChange(event.target.value)}
                     className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-2.5 pl-3 pr-9 text-xs font-semibold text-slate-900 shadow-xs outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10"
                   >
                     {families.map((family) => (
@@ -262,7 +274,11 @@ export default function AppShell({ children }: AppShellProps) {
                     htmlFor="mobile-member-selector"
                     className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400"
                   >
-                    <User size={12} className="text-slate-400" aria-hidden="true" />
+                    <User
+                      size={12}
+                      className="text-slate-400"
+                      aria-hidden="true"
+                    />
                     Viewing data for
                   </label>
 

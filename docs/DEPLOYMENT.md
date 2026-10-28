@@ -58,7 +58,3 @@ Before using real family data or exposing the application publicly:
 - Test Alembic migrations against a staging database before production updates.
 - Run unit/integration tests and verify critical user journeys in the target environment.
 - Select and publish an open-source license if intended; no root `LICENSE` file was present in the inspected branch.
-
-## Other hosting targets
-
-`deployment/` currently contains only a placeholder on the inspected branch, so no independent Kubernetes/cloud-hosting manifest is provided here. Add target-specific instructions only after that deployment configuration has been implemented and verified.
