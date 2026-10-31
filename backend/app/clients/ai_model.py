@@ -222,7 +222,7 @@ class AIModelClient:
             "model": model or self.model,
             "messages": messages,
             "temperature": 0.0,
-            "max_tokens": 1000,
+            "max_tokens": 8192, 
             "response_format": {"type": "json_object"},
         }
 

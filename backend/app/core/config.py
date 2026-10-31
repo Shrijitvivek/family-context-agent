@@ -33,9 +33,9 @@ class Settings(BaseSettings):
     demo_family_name: str = "Nair Family"
 
     nebius_api_key: str = ""
-    nebius_base_url: str = "https://api.studio.nebius.ai/v1/"
+    nebius_base_url: str = "https://api.tokenfactory.nebius.com/v1/"
     nvidia_model_name: str = ""
-    vision_model_name: str = "Qwen/Qwen2.5-VL-72B-Instruct"
+    vision_model_name: str = "nvidia/Nemotron-3.5-Super-VL"
     model_timeout_seconds: float = 60.0
 
     upload_dir: str = "storage/uploads"
